@@ -212,6 +212,7 @@ async def _persist_diagnosis(
 
     try:
         # 1. Determine storage path & MIME type
+        import os
         extension = os.path.splitext(filename)[1].lower() or ".jpg"
         storage_path = f"{uuid.uuid4().hex}{extension}"
         mime_type = content_type or mimetypes.guess_type(filename)[0] or "image/jpeg"
@@ -251,3 +252,16 @@ async def _persist_diagnosis(
     except Exception:
         logger.exception("Supabase persistence failed - returning prediction without image_url.")
         return None
+
+# ---------------------------------------------------------------------------
+# Server Startup (Cloud Run / Local)
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    import uvicorn
+    import os
+    
+    # Cloud Run provides the port via the PORT environment variable.
+    # Defaults to 8000 for local development.
+    port = int(os.environ.get("PORT", 8000))
+    
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
