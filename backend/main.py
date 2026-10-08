@@ -148,6 +148,10 @@ def models_ready() -> bool:
 
 @torch.inference_mode()
 def run_pipeline(image_bytes: bytes) -> dict[str, object]:
+    s1, s2 = stage1_model, stage2_model
+    if s1 is None or s2 is None:
+        raise HTTPException(status_code=503, detail=load_error or "Models unavailable.")
+
     try:
         image = Image.open(io.BytesIO(image_bytes))
         image = ImageOps.exif_transpose(image).convert("RGB")
@@ -157,13 +161,13 @@ def run_pipeline(image_bytes: bytes) -> dict[str, object]:
     tensor = inference_transforms(image).unsqueeze(0).to(DEVICE)
 
     # Stage 1 - crop identification
-    crop_probs = F.softmax(stage1_model(tensor), dim=1)[0]
+    crop_probs = F.softmax(s1(tensor), dim=1)[0]
     crop_idx = int(crop_probs.argmax())
     crop_conf = float(crop_probs[crop_idx])
     crop = STAGE1_CLASSES[crop_idx]
 
     # Stage 2 - nutrient deficiency diagnosis
-    def_probs = F.softmax(stage2_model(tensor), dim=1)[0]
+    def_probs = F.softmax(s2(tensor), dim=1)[0]
 
     # Kalabasa has no Phosphorus class in the dataset: fall back to the
     # next-highest probability class.
