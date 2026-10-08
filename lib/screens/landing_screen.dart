@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../utils/constants.dart';
-import 'main_shell.dart';
+import 'register_screen.dart';
+import 'login_screen.dart';
 
-/// NutriLeaf landing page with hero plant image, welcome copy,
-/// trust badge, and a pill-shaped CTA — all against #F4F4EB.
+/// NutriLeaf landing page — Leafora-inspired clean layout.
+/// Text at top, hero illustration centered in a soft circle, pill CTA pinned to bottom.
 class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key});
 
@@ -46,7 +47,7 @@ class _LandingScreenState extends State<LandingScreen>
         curve: const Interval(0.0, 0.7, curve: Curves.easeOut),
       ),
     );
-    _heroScale = Tween<double>(begin: 0.85, end: 1.0).animate(
+    _heroScale = Tween<double>(begin: 0.88, end: 1.0).animate(
       CurvedAnimation(
         parent: _heroController,
         curve: const Interval(0.0, 0.8, curve: Curves.easeOutCubic),
@@ -154,15 +155,28 @@ class _LandingScreenState extends State<LandingScreen>
     super.dispose();
   }
 
-  void _navigateToApp() {
-    Navigator.of(context).pushReplacement(
+  void _navigateToRegister() {
+    Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            const MainShell(),
+            const RegisterScreen(),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
-        transitionDuration: const Duration(milliseconds: 600),
+        transitionDuration: const Duration(milliseconds: 500),
+      ),
+    );
+  }
+
+  void _navigateToLogin() {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const LoginScreen(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 500),
       ),
     );
   }
@@ -171,186 +185,254 @@ class _LandingScreenState extends State<LandingScreen>
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final topPadding = MediaQuery.of(context).padding.top;
 
     return Scaffold(
       backgroundColor: AppColors.softBackground,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            // ── Scrollable content ──
-            Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 16),
+      body: Column(
+        children: [
+          SizedBox(height: topPadding),
 
-                    // ── Hero Image ──
-                    FadeTransition(
-                      opacity: _heroFade,
-                      child: ScaleTransition(
-                        scale: _heroScale,
-                        child: Container(
-                          width: size.width * 0.75,
-                          height: size.width * 0.75,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(32),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(32),
-                            child: Image.asset(
-                              'assets/images/download.png',
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return _fallbackHeroWidget();
-                              },
-                            ),
-                          ),
+          // ── Scrollable content ──
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                children: [
+                  const SizedBox(height: 32),
+
+                  // ── Brand Name ──
+                  SlideTransition(
+                    position: _preHeaderSlide,
+                    child: FadeTransition(
+                      opacity: _preHeaderFade,
+                      child: Text(
+                        'NutriLeaf',
+                        style: GoogleFonts.poppins(
+                          fontSize: 36,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF354024),
+                          letterSpacing: -0.5,
+                          height: 1.1,
                         ),
                       ),
                     ),
+                  ),
 
-                    const SizedBox(height: 36),
+                  const SizedBox(height: 6),
 
-                    // ── WELCOME pre-header ──
-                    SlideTransition(
-                      position: _preHeaderSlide,
-                      child: FadeTransition(
-                        opacity: _preHeaderFade,
+                  // ── Tagline ──
+                  SlideTransition(
+                    position: _headlineSlide,
+                    child: FadeTransition(
+                      opacity: _headlineFade,
+                      child: Text(
+                        'DETECT · DIAGNOSE · THRIVE',
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF889063),
+                          letterSpacing: 3.0,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 6),
+
+                  // ── Subtext ──
+                  SlideTransition(
+                    position: _subtextSlide,
+                    child: FadeTransition(
+                      opacity: _subtextFade,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 48),
                         child: Text(
-                          'WELCOME',
-                          style: GoogleFonts.alata(
+                          'Monitor plant health, detect nutrient deficiencies, and get smart care recommendations in one app.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(
                             fontSize: 13,
                             fontWeight: FontWeight.w400,
-                            color: AppColors.terracotta.withValues(alpha: 0.65),
-                            letterSpacing: 5.0,
+                            color: AppColors.caption,
+                            height: 1.6,
                           ),
                         ),
                       ),
                     ),
+                  ),
 
-                    const SizedBox(height: 16),
+                  const SizedBox(height: 32),
 
-                    // ── Main headline ──
-                    SlideTransition(
-                      position: _headlineSlide,
-                      child: FadeTransition(
-                        opacity: _headlineFade,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 36),
-                          child: Text(
-                            'Take care of your\nplants the smart way.',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.alata(
-                              fontSize: 28,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primaryGreen,
-                              height: 1.35,
-                            ),
-                          ),
-                        ),
-                      ),
+                  // ── Hero Illustration ──
+                  FadeTransition(
+                    opacity: _heroFade,
+                    child: ScaleTransition(
+                      scale: _heroScale,
+                      child: _buildHeroIllustration(size),
                     ),
+                  ),
 
-                    const SizedBox(height: 16),
+                  const SizedBox(height: 28),
 
-                    // ── Subtext ──
-                    SlideTransition(
-                      position: _subtextSlide,
-                      child: FadeTransition(
-                        opacity: _subtextFade,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 40),
-                          child: Text(
-                            'Monitor plant health, detect nutrient deficiencies, and get smart care recommendations in one app.',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.alata(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w400,
-                              color: const Color(0xFF6B7B6B),
-                              height: 1.6,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                  // ── Page indicator dots ──
+                  FadeTransition(
+                    opacity: _badgeFade,
+                    child: _buildPageDots(),
+                  ),
 
-                    const SizedBox(height: 20),
-
-                    // ── Trust badge ──
-                    FadeTransition(
-                      opacity: _badgeFade,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.terracotta.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        child: Text(
-                          'Build the perfect care for your plants',
-                          style: GoogleFonts.alata(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w400,
-                            color: AppColors.terracotta.withValues(alpha: 0.80),
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 32),
-                  ],
-                ),
+                  const SizedBox(height: 24),
+                ],
               ),
             ),
+          ),
 
-            // ── CTA Button (pinned to bottom) ──
-            SlideTransition(
-              position: _ctaSlide,
-              child: FadeTransition(
-                opacity: _ctaFade,
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    32,
-                    8,
-                    32,
-                    bottomPadding + 28,
-                  ),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 58,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryGreen,
-                        borderRadius: BorderRadius.circular(50),
-                        boxShadow: SoftShadows.ctaButton,
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: _navigateToApp,
-                          borderRadius: BorderRadius.circular(50),
-                          splashColor: Colors.white.withValues(alpha: 0.15),
-                          highlightColor: Colors.white.withValues(alpha: 0.08),
-                          child: Center(
-                            child: Text(
-                              'Get Started',
-                              style: GoogleFonts.alata(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w400,
-                                color: AppColors.white,
-                                letterSpacing: 0.8,
+          // ── CTA Buttons (pinned to bottom) ──
+          SlideTransition(
+            position: _ctaSlide,
+            child: FadeTransition(
+              opacity: _ctaFade,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(28, 8, 28, bottomPadding + 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Primary CTA
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF354024),
+                          borderRadius: BorderRadius.circular(500),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF354024)
+                                  .withValues(alpha: 0.28),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _navigateToRegister,
+                            borderRadius: BorderRadius.circular(500),
+                            splashColor: Colors.white.withValues(alpha: 0.15),
+                            highlightColor:
+                                Colors.white.withValues(alpha: 0.08),
+                            child: Center(
+                              child: Text(
+                                'Get Started',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.white,
+                                  letterSpacing: 0.4,
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
+
+                    const SizedBox(height: 16),
+
+                    // Secondary link
+                    GestureDetector(
+                      onTap: _navigateToLogin,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 6.0, horizontal: 16.0),
+                        child: RichText(
+                          text: TextSpan(
+                            text: 'Already have an account? ',
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w400,
+                              color: AppColors.caption,
+                            ),
+                            children: [
+                              TextSpan(
+                                text: 'Log in',
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF354024),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeroIllustration(Size size) {
+    final diameter = size.width * 0.72;
+    return Center(
+      child: SizedBox(
+        width: diameter,
+        height: diameter,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // ── Soft background circle ──
+            Container(
+              width: diameter,
+              height: diameter,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.paleGreen.withValues(alpha: 0.6),
+              ),
+            ),
+
+            // ── Small accent circle (top-right) ──
+            Positioned(
+              top: diameter * 0.06,
+              right: diameter * 0.04,
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF889063).withValues(alpha: 0.25),
+                ),
+              ),
+            ),
+
+            // ── Small accent dot (bottom-left) ──
+            Positioned(
+              bottom: diameter * 0.10,
+              left: diameter * 0.08,
+              child: Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF354024).withValues(alpha: 0.15),
+                ),
+              ),
+            ),
+
+            // ── Hero image ──
+            ClipOval(
+              child: SizedBox(
+                width: diameter * 0.82,
+                height: diameter * 0.82,
+                child: Image.asset(
+                  'assets/images/auth_hero.jpg',
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) =>
+                      _fallbackHeroWidget(diameter * 0.82),
                 ),
               ),
             ),
@@ -360,12 +442,35 @@ class _LandingScreenState extends State<LandingScreen>
     );
   }
 
+  Widget _buildPageDots() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(3, (i) {
+        final isActive = i == 0;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          width: isActive ? 20 : 7,
+          height: 7,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            color: isActive
+                ? const Color(0xFF354024)
+                : const Color(0xFF354024).withValues(alpha: 0.18),
+          ),
+        );
+      }),
+    );
+  }
+
   /// Fallback widget if the hero image asset isn't found.
-  Widget _fallbackHeroWidget() {
+  Widget _fallbackHeroWidget(double size) {
     return Container(
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: AppColors.primaryGreen.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(32),
+        shape: BoxShape.circle,
       ),
       child: Center(
         child: Column(
@@ -373,14 +478,14 @@ class _LandingScreenState extends State<LandingScreen>
           children: [
             Icon(
               Icons.eco_rounded,
-              size: 80,
+              size: 64,
               color: AppColors.primaryGreen.withValues(alpha: 0.35),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Text(
               'NutriLeaf',
-              style: GoogleFonts.alata(
-                fontSize: 22,
+              style: GoogleFonts.poppins(
+                fontSize: 18,
                 color: AppColors.primaryGreen.withValues(alpha: 0.4),
               ),
             ),

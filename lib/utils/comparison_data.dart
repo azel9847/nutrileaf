@@ -70,46 +70,7 @@ class ComparisonData {
         'Fruits: Full-size → Small',
       ],
     ),
-    NutrientType.calcium: const LeafComparison(
-      nutrient: NutrientType.calcium,
-      healthyTraits: [
-        'Straight, undistorted new leaves',
-        'Smooth leaf tips',
-        'Healthy fruit bottoms',
-        'Well-developed root tips',
-      ],
-      affectedTraits: [
-        'Curled or distorted new growth',
-        'Tip burn on young leaves',
-        'Blossom end rot on fruits',
-        'Stunted root tips',
-      ],
-      keyDifferences: [
-        'New leaves: Straight → Curled',
-        'Tips: Smooth → Burned',
-        'Fruits: Healthy → Blossom end rot',
-      ],
-    ),
-    NutrientType.magnesium: const LeafComparison(
-      nutrient: NutrientType.magnesium,
-      healthyTraits: [
-        'Uniform green color between leaf veins',
-        'Flat, normal leaf shape',
-        'Older leaves remain healthy',
-        'Good chlorophyll production',
-      ],
-      affectedTraits: [
-        'Yellow patches between green veins',
-        'Leaves may curl upward',
-        'Reddish-purple coloring appears',
-        'Older leaves affected first, may drop',
-      ],
-      keyDifferences: [
-        'Between veins: Green → Yellow',
-        'Shape: Flat → Curled upward',
-        'Color: Green → Red-purple tint',
-      ],
-    ),
+
   };
 
   static const LeafComparison _defaultComparison = LeafComparison(

@@ -7,10 +7,20 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nutrileaf/main.dart';
 import 'package:nutrileaf/services/settings_service.dart';
 
 void main() {
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await Supabase.initialize(
+      url: 'https://example.supabase.co',
+      publishableKey: 'test-anon-key',
+    );
+  });
+
   testWidgets('NutriLeafApp smoke test', (WidgetTester tester) async {
     // Build our app wrapped in the required SettingsService provider.
     final settingsService = SettingsService();
@@ -27,5 +37,7 @@ void main() {
 
     // Settle splash screen transition timer (3 seconds)
     await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100));
   });
+
 }

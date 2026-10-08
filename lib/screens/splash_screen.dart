@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../utils/constants.dart';
-import 'landing_screen.dart';
 
 /// Minimal animated splash screen with solid #1f361c background
 /// and the NutriLeaf brand mark. Transitions to the landing page.
@@ -57,22 +56,6 @@ class _SplashScreenState extends State<SplashScreen>
     _scaleController.forward();
     Future.delayed(const Duration(milliseconds: 400), () {
       if (mounted) _slideController.forward();
-    });
-
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                const LandingScreen(),
-            transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return FadeTransition(opacity: animation, child: child);
-            },
-            transitionDuration: const Duration(milliseconds: 800),
-          ),
-        );
-      }
     });
   }
 
@@ -138,7 +121,7 @@ class _SplashScreenState extends State<SplashScreen>
                   opacity: _fadeAnimation,
                   child: Text(
                     'NutriLeaf',
-                    style: GoogleFonts.alata(
+                    style: GoogleFonts.poppins(
                       fontSize: 36,
                       fontWeight: FontWeight.w400,
                       color: AppColors.white,
@@ -157,7 +140,7 @@ class _SplashScreenState extends State<SplashScreen>
                   opacity: _fadeAnimation,
                   child: Text(
                     'Smart Nutrient Detection for Smarter Farming',
-                    style: GoogleFonts.alata(
+                    style: GoogleFonts.poppins(
                       fontSize: 13,
                       fontWeight: FontWeight.w400,
                       color: AppColors.white.withValues(alpha: 0.70),
@@ -191,7 +174,7 @@ class _SplashScreenState extends State<SplashScreen>
                 opacity: _fadeAnimation,
                 child: Text(
                   'Powered by AI',
-                  style: GoogleFonts.alata(
+                  style: GoogleFonts.poppins(
                     fontSize: 12,
                     color: AppColors.white.withValues(alpha: 0.40),
                     letterSpacing: 1,

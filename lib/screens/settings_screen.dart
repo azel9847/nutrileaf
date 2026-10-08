@@ -3,11 +3,36 @@ import 'package:provider/provider.dart';
 import '../utils/constants.dart';
 import '../utils/app_strings.dart';
 import '../services/settings_service.dart';
+import '../services/auth_service.dart';
 import '../widgets/soft_card.dart';
 
 /// Settings screen with how-to guide, dark mode, language toggle, and about section.
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _isLoading = false;
+
+  Future<void> _handleLogout() async {
+    setState(() => _isLoading = true);
+    try {
+      await AuthService().signOut();
+      // AuthGate will automatically detect the signedOut event and pop to root (LandingScreen)
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to logout: $e'),
+          backgroundColor: AppColors.dangerRed,
+        ),
+      );
+      setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +60,10 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 24),
 
+              // Profile Section
+              _buildProfileSection(isDark, lang),
               const SizedBox(height: 28),
 
               // How to Use section
@@ -190,17 +218,45 @@ class SettingsScreen extends StatelessWidget {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),
-                    Text(
-                      'Prototype for Pre-Oral Defense',
-                      style: AppTextStyles.caption.copyWith(
-                        color: isDark ? AppColors.darkCaption : null,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
                   ],
                 ),
               ),
 
+              const SizedBox(height: 40),
+
+              // Logout Button
+              if (_isLoading)
+                const Center(
+                  child: CircularProgressIndicator(color: AppColors.dangerRed),
+                )
+              else
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: OutlinedButton.icon(
+                    onPressed: _handleLogout,
+                    icon: const Icon(
+                      Icons.logout_rounded,
+                      color: AppColors.dangerRed,
+                    ),
+                    label: Text(
+                      'Log Out',
+                      style: AppTextStyles.bodyBold.copyWith(
+                        color: AppColors.dangerRed,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(
+                        color: AppColors.dangerRed.withValues(alpha: 0.5),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppDimens.radiusLG),
+                      ),
+                      backgroundColor:
+                          AppColors.dangerRed.withValues(alpha: 0.05),
+                    ),
+                  ),
+                ),
               const SizedBox(height: 40),
             ],
           ),
@@ -214,6 +270,98 @@ class SettingsScreen extends StatelessWidget {
       title,
       style: AppTextStyles.headline3.copyWith(
         color: isDark ? AppColors.darkHeadingText : null,
+      ),
+    );
+  }
+
+  Widget _buildProfileSection(bool isDark, String lang) {
+    final user = AuthService().currentUser;
+    if (user == null) return const SizedBox.shrink();
+
+    final metadata = user.userMetadata ?? {};
+    final name = metadata['name'] ?? metadata['full_name'] ?? 'NutriLeaf User';
+    final avatarUrl = metadata['avatar_url'] ?? metadata['picture'] as String?;
+    final email = user.email ?? 'No email associated';
+    
+    final isGoogle = user.identities?.any((id) => id.provider == 'google') ?? false;
+
+    return SoftCard(
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 32,
+            backgroundColor: (isDark ? AppColors.leafGreen : AppColors.primaryGreen)
+                .withValues(alpha: 0.15),
+            backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
+            child: avatarUrl == null
+                ? Icon(
+                    Icons.person_rounded,
+                    size: 32,
+                    color: isDark ? AppColors.leafGreen : AppColors.primaryGreen,
+                  )
+                : null,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: AppTextStyles.subtitle.copyWith(
+                    color: isDark ? AppColors.darkHeadingText : AppColors.darkText,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  email,
+                  style: AppTextStyles.caption.copyWith(
+                    color: isDark ? AppColors.darkCaption : AppColors.caption,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (isGoogle) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1F2937) : AppColors.offWhite,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isDark ? AppColors.darkDivider : AppColors.divider,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Image.asset(
+                          'assets/images/google_logo.png',
+                          width: 14,
+                          height: 14,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(Icons.account_circle, size: 14),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Google Account',
+                          style: AppTextStyles.caption.copyWith(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? AppColors.darkBodyText : AppColors.darkText,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
+
 import '../utils/constants.dart';
 
-/// Represents the types of nutrient deficiencies the app can detect.
+/// Nutrient deficiency types diagnosed by HHC-VNDC Stage-2 expert models.
+///
+/// All five vegetable experts share the same four output classes:
+///   healthy | nitrogen | phosphorus | potassium
 enum NutrientType {
   nitrogen,
   phosphorus,
   potassium,
-  calcium,
-  magnesium,
   healthy,
 }
 
-/// Extension providing display properties for each nutrient type.
+/// Extension providing display properties for each [NutrientType].
 extension NutrientTypeExtension on NutrientType {
   String get displayName {
     switch (this) {
@@ -21,10 +23,6 @@ extension NutrientTypeExtension on NutrientType {
         return 'Phosphorus (P)';
       case NutrientType.potassium:
         return 'Potassium (K)';
-      case NutrientType.calcium:
-        return 'Calcium (Ca)';
-      case NutrientType.magnesium:
-        return 'Magnesium (Mg)';
       case NutrientType.healthy:
         return 'Healthy';
     }
@@ -38,10 +36,6 @@ extension NutrientTypeExtension on NutrientType {
         return 'P';
       case NutrientType.potassium:
         return 'K';
-      case NutrientType.calcium:
-        return 'Ca';
-      case NutrientType.magnesium:
-        return 'Mg';
       case NutrientType.healthy:
         return '✓';
     }
@@ -55,10 +49,6 @@ extension NutrientTypeExtension on NutrientType {
         return AppColors.phosphorus;
       case NutrientType.potassium:
         return AppColors.potassium;
-      case NutrientType.calcium:
-        return AppColors.calcium;
-      case NutrientType.magnesium:
-        return AppColors.magnesium;
       case NutrientType.healthy:
         return AppColors.healthy;
     }
@@ -72,10 +62,6 @@ extension NutrientTypeExtension on NutrientType {
         return Icons.local_florist_outlined;
       case NutrientType.potassium:
         return Icons.bolt_outlined;
-      case NutrientType.calcium:
-        return Icons.shield_outlined;
-      case NutrientType.magnesium:
-        return Icons.wb_sunny_outlined;
       case NutrientType.healthy:
         return Icons.check_circle_outlined;
     }
@@ -84,80 +70,84 @@ extension NutrientTypeExtension on NutrientType {
   String get description {
     switch (this) {
       case NutrientType.nitrogen:
-        return 'Essential for leaf growth and chlorophyll production. Deficiency causes yellowing of older leaves.';
+        return 'Essential for leaf growth and chlorophyll production. '
+            'Deficiency causes yellowing of older leaves (chlorosis) and stunted growth.';
       case NutrientType.phosphorus:
-        return 'Vital for root development and flowering. Deficiency causes purple/dark leaves and stunted growth.';
+        return 'Vital for root development, flowering, and energy transfer. '
+            'Deficiency causes dark green or purplish leaves and delayed maturity.';
       case NutrientType.potassium:
-        return 'Important for disease resistance and fruit quality. Deficiency causes brown leaf edges.';
-      case NutrientType.calcium:
-        return 'Needed for cell wall structure and new growth. Deficiency causes distorted new leaves.';
-      case NutrientType.magnesium:
-        return 'Central to chlorophyll molecule. Deficiency causes interveinal chlorosis on older leaves.';
+        return 'Important for disease resistance, water regulation, and fruit quality. '
+            'Deficiency causes brown scorching on leaf margins.';
       case NutrientType.healthy:
         return 'No nutrient deficiency detected. The plant appears to be in good health.';
     }
   }
 
-  /// Description of what a healthy leaf looks like for this nutrient context.
+  /// Describes what a healthy leaf looks like for context.
   String get healthyDescription {
     switch (this) {
       case NutrientType.nitrogen:
-        return 'Leaves are vibrant, dark green with uniform coloring. Older leaves remain healthy and attached.';
+        return 'Leaves are vibrant, dark green with uniform coloring. '
+            'Older leaves remain healthy and attached.';
       case NutrientType.phosphorus:
-        return 'Leaves show normal green color without purplish tint. Root system is strong with good branching.';
+        return 'Leaves show normal green color without purplish tint. '
+            'Root system is strong with good branching.';
       case NutrientType.potassium:
-        return 'Leaf margins are clean and intact. Stems are sturdy and fruits develop to full size.';
-      case NutrientType.calcium:
-        return 'New growth emerges straight and undistorted. No blossom end rot on fruits.';
-      case NutrientType.magnesium:
-        return 'Leaves are uniformly green between veins. No yellowing or reddish-purple coloring visible.';
+        return 'Leaf margins are clean and intact. '
+            'Stems are sturdy and fruits develop to full size.';
       case NutrientType.healthy:
-        return 'The plant shows vibrant green foliage, strong stems, and normal growth patterns throughout.';
+        return 'The plant shows vibrant green foliage, strong stems, '
+            'and normal growth patterns throughout.';
     }
   }
 
-  /// Description of what an affected leaf looks like.
+  /// Describes symptoms when this deficiency is present.
   String get affectedDescription {
     switch (this) {
       case NutrientType.nitrogen:
-        return 'Older/lower leaves turn yellow (chlorosis). Plant growth is stunted with pale, light green foliage.';
+        return 'Older/lower leaves turn yellow (chlorosis). Plant growth is stunted '
+            'with pale, light-green foliage and early leaf drop.';
       case NutrientType.phosphorus:
-        return 'Leaves develop dark green or purplish coloring. Root growth is poor and maturity is delayed.';
+        return 'Leaves develop dark green or purplish coloring. Root growth is poor '
+            'and flowering / maturity is delayed.';
       case NutrientType.potassium:
-        return 'Brown scorching appears on leaf edges. Stems are weak and fruits are small or misshapen.';
-      case NutrientType.calcium:
-        return 'New growth is curled or distorted. Tip burn on young leaves and blossom end rot on fruits.';
-      case NutrientType.magnesium:
-        return 'Yellowing between veins on older leaves (interveinal chlorosis). Leaves may curl upward.';
+        return 'Brown scorching appears on leaf edges (marginal necrosis). '
+            'Stems are weak and fruits are small or misshapen.';
       case NutrientType.healthy:
         return 'No visible deficiency symptoms.';
     }
   }
 
-  /// Short symptom highlights for comparison badges.
+  /// Short symptom highlights for comparison badges and summary cards.
   List<String> get symptomHighlights {
     switch (this) {
       case NutrientType.nitrogen:
         return ['Yellow older leaves', 'Stunted growth', 'Pale foliage', 'Early leaf drop'];
       case NutrientType.phosphorus:
-        return ['Purple leaves', 'Poor roots', 'Delayed flowering', 'Stunted plant'];
+        return ['Purple/dark leaves', 'Poor roots', 'Delayed flowering', 'Stunted plant'];
       case NutrientType.potassium:
         return ['Brown leaf edges', 'Weak stems', 'Small fruits', 'Disease prone'];
-      case NutrientType.calcium:
-        return ['Curled new leaves', 'Tip burn', 'Blossom end rot', 'Poor roots'];
-      case NutrientType.magnesium:
-        return ['Yellow between veins', 'Red-purple color', 'Curling leaves', 'Leaf drop'];
       case NutrientType.healthy:
         return ['Vibrant green', 'Strong stems', 'Normal growth'];
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Serialization
+  // ---------------------------------------------------------------------------
+
   String toJsonString() => name;
 
   static NutrientType fromJsonString(String value) {
-    return NutrientType.values.firstWhere(
-      (e) => e.name == value,
-      orElse: () => NutrientType.healthy,
-    );
+    // Exact match
+    for (final type in NutrientType.values) {
+      if (type.name == value.toLowerCase()) return type;
+    }
+    // Legacy labels that may exist in stored history
+    const legacyMap = <String, NutrientType>{
+      'calcium': NutrientType.potassium,   // closest substitute
+      'magnesium': NutrientType.nitrogen,  // closest substitute
+    };
+    return legacyMap[value.toLowerCase()] ?? NutrientType.healthy;
   }
 }

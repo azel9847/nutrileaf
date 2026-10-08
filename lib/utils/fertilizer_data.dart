@@ -1,10 +1,23 @@
 import '../models/nutrient.dart';
+import '../models/scan_result.dart';
 
 /// Fertilizer recommendation database keyed by nutrient type.
+/// Crop-specific variants override the generic recommendations for key pairings.
 class FertilizerData {
   FertilizerData._();
 
-  static FertilizerRecommendation getRecommendation(NutrientType type) {
+  /// Get a recommendation. If a crop-specific variant exists for the
+  /// [type] + [crop] pairing, it is returned; otherwise falls back to generic.
+  static FertilizerRecommendation getRecommendation(
+    NutrientType type, {
+    CropType? crop,
+  }) {
+    if (crop != null) {
+      final cropMap = _cropSpecificRecommendations[crop];
+      if (cropMap != null && cropMap.containsKey(type)) {
+        return cropMap[type]!;
+      }
+    }
     return _recommendations[type] ?? _healthyRecommendation;
   }
 
@@ -93,62 +106,6 @@ class FertilizerData {
       ],
       severity: 'High importance during fruiting; address promptly',
     ),
-    NutrientType.calcium: FertilizerRecommendation(
-      nutrient: NutrientType.calcium,
-      fertilizerName: 'Gypsum (Calcium Sulfate)',
-      alternativeName: 'Agricultural Lime (CaCO₃)',
-      applicationRate: '200–500 kg per hectare',
-      applicationMethod: 'Broadcasting and incorporation into soil',
-      timing: 'Apply 2–4 weeks before planting',
-      symptoms: [
-        'Distorted or curled new growth',
-        'Blossom end rot in tomatoes/peppers',
-        'Tip burn on young leaves',
-        'Poor root development',
-      ],
-      tips: [
-        'Calcium is immobile in the plant — new growth shows symptoms first',
-        'Foliar calcium sprays (CaCl₂) provide quick relief',
-        'Maintain consistent watering — drought worsens Ca deficiency',
-        'Lime also raises soil pH; use gypsum if pH is already optimal',
-        'Eggshell compost provides slow-release calcium for gardens',
-      ],
-      safetyNotes: [
-        'Lime dust can irritate eyes — wear eye protection',
-        'Gypsum is generally safe but avoid inhalation',
-        'Test soil pH before applying lime to avoid over-correction',
-        'Apply lime well before planting for best results',
-      ],
-      severity: 'Address immediately if blossom end rot is visible',
-    ),
-    NutrientType.magnesium: FertilizerRecommendation(
-      nutrient: NutrientType.magnesium,
-      fertilizerName: 'Epsom Salt (MgSO₄)',
-      alternativeName: 'Dolomite Lime (CaMg(CO₃)₂)',
-      applicationRate: '10–25 kg per hectare (foliar: 2% solution)',
-      applicationMethod: 'Foliar spray or soil application',
-      timing: 'Apply when interveinal chlorosis appears',
-      symptoms: [
-        'Interveinal chlorosis on older leaves (yellowing between green veins)',
-        'Reddish-purple leaf coloring',
-        'Leaves curling upward',
-        'Early leaf drop',
-      ],
-      tips: [
-        'Epsom salt foliar spray gives fastest results (dissolve 20g/L)',
-        'Dolomite lime provides both Ca and Mg and raises pH',
-        'High potassium can block magnesium uptake — check K:Mg ratio',
-        'Sandy and acidic soils are most prone to Mg deficiency',
-        'Magnesium is central to chlorophyll — essential for photosynthesis',
-      ],
-      safetyNotes: [
-        'Epsom salt is generally safe for handling',
-        'Avoid applying foliar sprays in direct strong sunlight',
-        'Dolomite lime can raise soil pH — test before applying',
-        'Keep fertilizers out of reach of children and animals',
-      ],
-      severity: 'Moderate; affects photosynthesis if left untreated',
-    ),
   };
 
   static final FertilizerRecommendation _healthyRecommendation =
@@ -177,6 +134,126 @@ class FertilizerData {
     ],
     severity: 'No action required — plant looks healthy!',
   );
+
+  // ─── Crop-Specific Recommendations ────────────────────────────────────────
+  // Overrides the generic recommendations for specific crop + nutrient pairings.
+  static final Map<CropType, Map<NutrientType, FertilizerRecommendation>>
+      _cropSpecificRecommendations = {
+    // ─── Talong (Eggplant) ─────────────────────────────────────────────────
+    CropType.talong: {
+      NutrientType.nitrogen: FertilizerRecommendation(
+        nutrient: NutrientType.nitrogen,
+        fertilizerName: 'Urea (46-0-0)',
+        alternativeName: 'Ammonium Sulfate (21-0-0)',
+        applicationRate: '30–50 kg N/ha split into 2–3 applications',
+        applicationMethod: 'Side-dressing near the root zone; avoid crown contact',
+        timing: 'At transplanting, 3 weeks after, and at first flower bud appearance',
+        symptoms: [
+          'Uniform yellowing of older/lower leaves (general chlorosis)',
+          'Stunted plant with thin, pale-green stems',
+          'Reduced branching and slow fruit set',
+          'Small, dull-colored fruits',
+        ],
+        tips: [
+          'Eggplant is a heavy nitrogen feeder — split applications reduce losses',
+          'Apply early morning or late afternoon to minimize ammonia volatilization',
+          'Water after granular urea application to move N into the root zone',
+          'Foliar spray of 2% urea solution for rapid correction in severe cases',
+          'Compost incorporation provides slow-release N and improves soil structure',
+        ],
+        safetyNotes: [
+          'Wear gloves when handling urea granules',
+          'Store urea in a cool, dry, sealed container',
+          'Do not apply before heavy rain — risk of runoff and nitrogen loss',
+        ],
+        severity: 'High — limits leaf area, fruit number, and overall yield',
+      ),
+      NutrientType.potassium: FertilizerRecommendation(
+        nutrient: NutrientType.potassium,
+        fertilizerName: 'Muriate of Potash – MOP (0-0-60)',
+        alternativeName: 'Sulfate of Potash – SOP (0-0-50)',
+        applicationRate: '40–60 kg K₂O/ha split over 2 applications',
+        applicationMethod: 'Side-dressing or banded near the root zone',
+        timing: 'At transplanting and again at fruit development stage',
+        symptoms: [
+          'Marginal leaf scorch (brown, burnt edges on older leaves)',
+          'Fruit skin bronzing or dull coloration',
+          'Weak stems prone to lodging',
+          'Increased disease susceptibility (especially Phytophthora)',
+        ],
+        tips: [
+          'Potassium improves eggplant fruit skin quality and shelf life',
+          'Use SOP if chloride-sensitive soil conditions are suspected',
+          'Avoid over-application — excess K blocks Mg and Ca uptake',
+          'Wood ash provides organic K for small-scale plots (2–3 kg/plant area)',
+          'Split into 2 doses for better efficiency on sandy soils',
+        ],
+        safetyNotes: [
+          'MOP can irritate skin — wear protective gloves',
+          'Store in a dry location to prevent clumping',
+          'Avoid excessive rates — can increase soil salinity',
+        ],
+        severity: 'Moderate-High — affects fruit quality, disease resistance, and yield',
+      ),
+    },
+    // ─── Ampalaya (Bitter Melon) ────────────────────────────────────────────
+    CropType.ampalaya: {
+      NutrientType.potassium: FertilizerRecommendation(
+        nutrient: NutrientType.potassium,
+        fertilizerName: 'Muriate of Potash – MOP (0-0-60)',
+        alternativeName: 'Sulfate of Potash – SOP (0-0-50)',
+        applicationRate: '40–60 kg K₂O/ha split over 2 applications',
+        applicationMethod: 'Side-dressing along vine row or banded near roots',
+        timing: 'First dose at vine training (2–3 weeks after transplant); second at flowering',
+        symptoms: [
+          'Brown or necrotic scorching along leaf margins (leaf edge burn)',
+          'Bitter ampalaya fruit with irregular shape or poor fill',
+          'Weak, thin vines prone to breakage',
+          'Increased susceptibility to powdery mildew and other diseases',
+        ],
+        tips: [
+          'Potassium regulates bitterness compounds in ampalaya fruit — K deficiency alters flavor',
+          'Strong vines need K for climbing and trellis support — prioritize at vine training',
+          'Use SOP if soil Cl levels are already high',
+          'Wood ash is a traditional organic K source — 2–3 kg/plant area',
+          'Avoid excessive K which can interfere with Mg uptake',
+        ],
+        safetyNotes: [
+          'Wear gloves when handling MOP granules',
+          'MOP can increase soil salinity — avoid over-application',
+          'Keep away from water sources — soluble and can contaminate irrigation water',
+        ],
+        severity: 'High — affects vine vigour, disease resistance, and fruit quality',
+      ),
+      NutrientType.nitrogen: FertilizerRecommendation(
+        nutrient: NutrientType.nitrogen,
+        fertilizerName: 'Urea (46-0-0)',
+        alternativeName: 'Ammonium Sulfate (21-0-0)',
+        applicationRate: '30–50 kg N/ha split into 2–3 applications',
+        applicationMethod: 'Side-dressing along vine row; avoid placing near crown',
+        timing: 'At transplanting, at vine training (2–3 wks), and at flowering',
+        symptoms: [
+          'Pale yellow-green leaves especially on older vines and lower canopy',
+          'Slow vine extension and reduced internode length',
+          'Few female flowers and poor fruit set',
+          'Thin vines with weak tendrils',
+        ],
+        tips: [
+          'Ampalaya vines require steady N supply during rapid growth phase',
+          'Split applications reduce volatilization loss and over-vegetative growth',
+          'Water after granular application to move N into the root zone',
+          'Reduce N at heavy fruiting to avoid excessive vine growth over fruit',
+          'Compost mulch provides slow-release N and conserves soil moisture',
+        ],
+        safetyNotes: [
+          'Wear gloves when applying urea',
+          'Do not apply before heavy rain — runoff waste and pollution risk',
+          'Store in a dry, sealed container away from children',
+        ],
+        severity: 'High — limits vine growth, flower production, and fruit number',
+      ),
+    },
+  };
 }
 
 /// Data class for a fertilizer recommendation.

@@ -1,134 +1,87 @@
-import 'dart:math';
+import 'dart:typed_data';
+
 import '../models/nutrient.dart';
 import '../models/scan_result.dart';
+import 'hhc_api_service.dart';
 
-/// ML Service that handles model inference.
+/// Orchestration layer between the UI and [HhcApiService].
 ///
-/// Currently operates in simulation mode with realistic mock predictions.
-/// To integrate a real TFLite model:
-///   1. Place your .tflite model in assets/models/
-///   2. Set [useSimulation] to false
-///   3. Implement [_runRealInference]
+/// Provides the [analyzeImage] API consumed by [ScanScreen] and
+/// [ImagePreviewScreen]. All inference is performed server-side by the
+/// FastAPI HHC-VNDC backend via [HhcApiService].
 class MLService {
   static final MLService _instance = MLService._internal();
   factory MLService() => _instance;
   MLService._internal();
 
-  /// Toggle between simulation and real model inference.
-  final bool useSimulation = true;
+  final HhcApiService _api = HhcApiService();
 
-  bool _isModelLoaded = false;
+  /// No-op: kept for call-site compatibility.
+  Future<void> loadModel() async {}
 
-  /// Initialize the ML model.
-  Future<void> loadModel() async {
-    if (_isModelLoaded) return;
+  /// No-op: no local resources to release; kept for call-site compatibility.
+  Future<void> dispose() async {}
 
-    if (useSimulation) {
-      // Simulate model loading delay
-      await Future.delayed(const Duration(milliseconds: 500));
-      _isModelLoaded = true;
-      return;
+  /// Send [imageBytes] to the HHC-VNDC backend and return a [ScanResult].
+  ///
+  /// Parameters
+  /// ----------
+  /// [imagePath]  — local path or identifier used to label the result.
+  /// [imageBytes] — raw image bytes to upload.
+  /// [cropType]   — ignored: Stage-1 auto-detects the vegetable.
+  ///                Kept for call-site compatibility.
+  ///
+  /// Throws [HhcApiException] on network or server errors.
+  Future<ScanResult> analyzeImage(
+    String imagePath, {
+    CropType? cropType,
+    Uint8List? imageBytes,
+  }) async {
+    if (imageBytes == null || imageBytes.isEmpty) {
+      throw HhcApiException('No image bytes provided to MLService.analyzeImage.');
     }
 
-    // TODO: Real TFLite model loading
-    // final interpreter = await Interpreter.fromAsset('assets/models/nutrileaf_model.tflite');
-    _isModelLoaded = true;
-  }
+    // Derive a filename with a sensible extension from the path.
+    final filename = _filenameFromPath(imagePath);
 
-  /// Run inference on the given image path.
-  /// Returns a [ScanResult] with detected nutrient and confidence scores.
-  Future<ScanResult> analyzeImage(String imagePath, {CropType? cropType}) async {
-    if (!_isModelLoaded) await loadModel();
+    final prediction = await _api.predict(imageBytes, filename: filename);
 
-    if (useSimulation) {
-      return _runSimulatedInference(imagePath, cropType: cropType);
-    } else {
-      return _runRealInference(imagePath);
+    // Map backend string labels to CropType and NutrientType enums.
+    final detectedCrop = CropTypeExtension.fromJsonString(prediction.vegetable);
+    final detectedNutrient =
+        NutrientTypeExtension.fromJsonString(prediction.diagnosedDeficiency);
+
+    // Build a NutrientType -> double map from the server's probability dict.
+    // The backend now returns only the top class, so when no distribution is
+    // supplied, seed the detected class with its confidence.
+    final allPredictions = <NutrientType, double>{};
+    for (final nt in NutrientType.values) {
+      final key = nt.toJsonString();
+      allPredictions[nt] = prediction.deficiencyProbabilities[key] ??
+          (nt == detectedNutrient ? prediction.deficiencyConfidence : 0.0);
     }
-  }
-
-  /// Simulated inference that generates realistic predictions.
-  Future<ScanResult> _runSimulatedInference(String imagePath, {CropType? cropType}) async {
-    // Simulate processing time (1.5 - 3 seconds)
-    final random = Random();
-    final processingTime = 1500 + random.nextInt(1500);
-    await Future.delayed(Duration(milliseconds: processingTime));
-
-    // Generate realistic prediction distribution
-    final predictions = _generateRealisticPredictions(random);
-
-    // Find the top prediction
-    NutrientType topNutrient = NutrientType.healthy;
-    double topConfidence = 0;
-    predictions.forEach((nutrient, confidence) {
-      if (confidence > topConfidence) {
-        topConfidence = confidence;
-        topNutrient = nutrient;
-      }
-    });
-
-    // Assign crop type: use provided or random
-    final assignedCrop = cropType ?? CropType.values[random.nextInt(CropType.values.length)];
 
     return ScanResult(
       imagePath: imagePath,
-      detectedNutrient: topNutrient,
-      confidence: topConfidence,
-      allPredictions: predictions,
-      cropType: assignedCrop,
+      cropType: detectedCrop,
+      detectedNutrient: detectedNutrient,
+      confidence: prediction.deficiencyConfidence,
+      vegetableConfidence: prediction.vegetableConfidence,
+      vegetableProbabilities: prediction.vegetableProbabilities,
+      allPredictions: allPredictions,
+      imageUrl: prediction.imageUrl,
+      imageBytes: imageBytes,
+      isValidLeaf: true,
     );
   }
 
-  /// Generate a realistic probability distribution across all nutrient types.
-  Map<NutrientType, double> _generateRealisticPredictions(Random random) {
-    // Pick a dominant class randomly (weighted toward deficiencies for demo)
-    final nutrientTypes = NutrientType.values;
-    final dominantIndex = random.nextInt(nutrientTypes.length);
-    final dominant = nutrientTypes[dominantIndex];
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
 
-    // Generate raw scores with dominant class having high probability
-    final rawScores = <NutrientType, double>{};
-    double sum = 0;
-
-    for (final nutrient in nutrientTypes) {
-      double score;
-      if (nutrient == dominant) {
-        // Dominant class: 60-95% raw score
-        score = 0.6 + random.nextDouble() * 0.35;
-      } else {
-        // Other classes: 1-15% raw score
-        score = 0.01 + random.nextDouble() * 0.14;
-      }
-      rawScores[nutrient] = score;
-      sum += score;
-    }
-
-    // Normalize to sum to 1.0 (softmax-like)
-    final predictions = <NutrientType, double>{};
-    rawScores.forEach((nutrient, score) {
-      predictions[nutrient] = double.parse((score / sum).toStringAsFixed(4));
-    });
-
-    return predictions;
-  }
-
-  /// Real TFLite model inference — implement when model is available.
-  Future<ScanResult> _runRealInference(String imagePath) async {
-    // TODO: Implement real inference
-    // 1. Load and preprocess image (resize to 224x224, normalize)
-    // 2. Run interpreter.run(input, output)
-    // 3. Parse output tensor into predictions map
-    // 4. Return ScanResult
-
-    throw UnimplementedError(
-      'Real model inference not yet implemented. '
-      'Set useSimulation = true or implement this method.',
-    );
-  }
-
-  /// Dispose resources.
-  void dispose() {
-    _isModelLoaded = false;
-    // TODO: interpreter?.close();
+  String _filenameFromPath(String path) {
+    final name = path.split(RegExp(r'[/\\]')).last;
+    if (name.contains('.')) return name;
+    return '$name.jpg';
   }
 }

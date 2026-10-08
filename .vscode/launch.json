@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "NutriLeaf",
+            "request": "launch",
+            "type": "dart",
+            "args": [
+                "--dart-define=SUPABASE_URL=https://nsukhbwiltwghzmxgpwb.supabase.co",
+                "--dart-define=SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5zdWtoYndpbHR3Z2h6bXhncHdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5Njg0NTIsImV4cCI6MjEwMTU0NDQ1Mn0.1gflwK8J_EdeoqcWX7o0fGmk_d_VYEDWGmFWUoT1mYU"
+            ]
+        }
+    ]
+}

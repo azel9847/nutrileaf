@@ -12,6 +12,7 @@ class HistoryService {
 
   /// Save a scan result to history.
   Future<void> saveScan(ScanResult result) async {
+    if (!result.isValidLeaf) return;
     final prefs = await SharedPreferences.getInstance();
     final history = await getHistory();
     history.insert(0, result); // Most recent first

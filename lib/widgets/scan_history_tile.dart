@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -87,7 +86,7 @@ class ScanHistoryTile extends StatelessWidget {
                           ),
                           child: Text(
                             scan.cropType.displayName,
-                            style: GoogleFonts.alata(
+                            style: GoogleFonts.poppins(
                               fontSize: 10,
                               fontWeight: FontWeight.w500,
                               color: scan.cropType.color,
@@ -137,13 +136,18 @@ class ScanHistoryTile extends StatelessWidget {
   }
 
   Widget _buildThumbnail(bool isDark) {
-    final file = File(scan.imagePath);
-    if (file.existsSync()) {
-      return Image.file(
-        file,
-        width: 56,
-        height: 56,
-        fit: BoxFit.cover,
+    // Use in-memory bytes when present (fresh scan session).
+    // History items loaded from storage won't have bytes — show placeholder.
+    final bytes = scan.imageBytes;
+    if (bytes != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(AppDimens.radiusSM),
+        child: Image.memory(
+          bytes,
+          width: 56,
+          height: 56,
+          fit: BoxFit.cover,
+        ),
       );
     }
     return Container(

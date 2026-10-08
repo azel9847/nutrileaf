@@ -1,0 +1,6 @@
+{
+  "python.analysis.extraPaths": [
+    "c:\\Users\\USER\\.gemini\\antigravity-ide\\scratch\\nutrileaf\\backend\\venv\\Lib\\site-packages"
+  ],
+  "java.configuration.updateBuildConfiguration": "interactive"
+}

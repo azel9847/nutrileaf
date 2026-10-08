@@ -50,10 +50,18 @@ class AppColors {
   static const Color magnesium = Color(0xFFFFA726);
   static const Color healthy = Color(0xFF43593E);
 
-  // ── Crop Colors ──
-  static const Color rice = Color(0xFFFDD835);
-  static const Color corn = Color(0xFFFF8F00);
-  static const Color vegetable = Color(0xFF43593E);
+  // ── Crop Colors (HHC-VNDC Stage-1 classes) ──
+  static const Color ampalaya = Color(0xFF388E3C); // deep green — bitter melon
+  static const Color kalabasa = Color(0xFFFF8F00); // amber — squash
+  static const Color okra     = Color(0xFF558B2F); // olive green — okra
+  static const Color sitaw    = Color(0xFF00897B); // teal — string beans
+  static const Color talong   = Color(0xFF6A1B9A); // deep purple — eggplant
+
+  // ── Legacy crop colour aliases (kept for backward-compatible history entries) ──
+  static const Color eggplant  = talong;
+  static const Color ashGourd  = Color(0xFF546E7A);
+  static const Color snakeGourd = sitaw;
+  static const Color tomato    = Color(0xFFD32F2F);
 
   // ── Status Colors ──
   static const Color warningAmber = Color(0xFFFFB74D);
@@ -151,65 +159,65 @@ class SoftShadows {
 class AppTextStyles {
   AppTextStyles._();
 
-  static TextStyle get headline1 => GoogleFonts.alata(
+  static TextStyle get headline1 => GoogleFonts.poppins(
         fontSize: 28,
         fontWeight: FontWeight.w700,
         color: AppColors.darkText,
         height: 1.3,
       );
 
-  static TextStyle get headline2 => GoogleFonts.alata(
+  static TextStyle get headline2 => GoogleFonts.poppins(
         fontSize: 24,
         fontWeight: FontWeight.w700,
         color: AppColors.darkText,
         height: 1.3,
       );
 
-  static TextStyle get headline3 => GoogleFonts.alata(
+  static TextStyle get headline3 => GoogleFonts.poppins(
         fontSize: 20,
         fontWeight: FontWeight.w600,
         color: AppColors.darkText,
         height: 1.4,
       );
 
-  static TextStyle get subtitle => GoogleFonts.alata(
+  static TextStyle get subtitle => GoogleFonts.poppins(
         fontSize: 16,
         fontWeight: FontWeight.w600,
         color: AppColors.darkText,
       );
 
-  static TextStyle get body => GoogleFonts.alata(
+  static TextStyle get body => GoogleFonts.poppins(
         fontSize: 14,
         fontWeight: FontWeight.w400,
         color: AppColors.bodyText,
         height: 1.5,
       );
 
-  static TextStyle get bodyBold => GoogleFonts.alata(
+  static TextStyle get bodyBold => GoogleFonts.poppins(
         fontSize: 14,
         fontWeight: FontWeight.w600,
         color: AppColors.bodyText,
       );
 
-  static TextStyle get caption => GoogleFonts.alata(
+  static TextStyle get caption => GoogleFonts.poppins(
         fontSize: 12,
         fontWeight: FontWeight.w400,
         color: AppColors.caption,
       );
 
-  static TextStyle get button => GoogleFonts.alata(
+  static TextStyle get button => GoogleFonts.poppins(
         fontSize: 16,
         fontWeight: FontWeight.w600,
         color: AppColors.white,
         letterSpacing: 0.5,
       );
 
-  static TextStyle get navLabel => GoogleFonts.alata(
+  static TextStyle get navLabel => GoogleFonts.poppins(
         fontSize: 11,
         fontWeight: FontWeight.w500,
       );
 
-  static TextStyle get percentageLarge => GoogleFonts.alata(
+  static TextStyle get percentageLarge => GoogleFonts.poppins(
         fontSize: 36,
         fontWeight: FontWeight.w700,
         color: AppColors.primaryGreen,
@@ -251,6 +259,7 @@ class AppTheme {
 
   static ThemeData get lightTheme => ThemeData(
         useMaterial3: true,
+        textTheme: GoogleFonts.poppinsTextTheme(ThemeData.light().textTheme),
         brightness: Brightness.light,
         primaryColor: AppColors.primaryGreen,
         scaffoldBackgroundColor: AppColors.softBackground,
@@ -268,7 +277,7 @@ class AppTheme {
           centerTitle: true,
           backgroundColor: Colors.transparent,
           foregroundColor: AppColors.darkText,
-          titleTextStyle: GoogleFonts.alata(
+          titleTextStyle: GoogleFonts.poppins(
             fontSize: 20,
             fontWeight: FontWeight.w600,
             color: AppColors.darkText,
@@ -318,6 +327,7 @@ class AppTheme {
 
   static ThemeData get darkTheme => ThemeData(
         useMaterial3: true,
+        textTheme: GoogleFonts.poppinsTextTheme(ThemeData.dark().textTheme),
         brightness: Brightness.dark,
         primaryColor: AppColors.primaryGreen,
         scaffoldBackgroundColor: AppColors.darkBackground,
@@ -335,7 +345,7 @@ class AppTheme {
           centerTitle: true,
           backgroundColor: Colors.transparent,
           foregroundColor: AppColors.darkHeadingText,
-          titleTextStyle: GoogleFonts.alata(
+          titleTextStyle: GoogleFonts.poppins(
             fontSize: 20,
             fontWeight: FontWeight.w600,
             color: AppColors.darkHeadingText,

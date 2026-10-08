@@ -1,87 +1,212 @@
 import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+
 import '../utils/constants.dart';
 import 'nutrient.dart';
 
-// ─── Crop Type ───────────────────────────────────────────────────────────────
+// =============================================================================
+// CropType — aligned with HHC-VNDC Stage-1 classes
+// =============================================================================
 
-/// Represents the types of crops the app supports.
+/// The five vegetable crops supported by the HHC-VNDC Stage-1 classifier.
+///
+/// Labels match the backend constants exactly (lowercase):
+///   ampalaya | kalabasa | okra | sitaw | talong
 enum CropType {
-  rice,
-  corn,
-  vegetable,
+  ampalaya,
+  kalabasa,
+  okra,
+  sitaw,
+  talong,
 }
 
-/// Extension providing display properties for each crop type.
+/// Extension providing display properties for each [CropType].
 extension CropTypeExtension on CropType {
+  /// Filipino/common display name shown in the UI.
   String get displayName {
     switch (this) {
-      case CropType.rice:
-        return 'Rice';
-      case CropType.corn:
-        return 'Corn';
-      case CropType.vegetable:
-        return 'Vegetables';
+      case CropType.ampalaya:
+        return 'Ampalaya';
+      case CropType.kalabasa:
+        return 'Kalabasa';
+      case CropType.okra:
+        return 'Okra';
+      case CropType.sitaw:
+        return 'Sitaw';
+      case CropType.talong:
+        return 'Talong';
+    }
+  }
+
+  /// English / scientific name of the crop.
+  String get englishName {
+    switch (this) {
+      case CropType.ampalaya:
+        return 'Bitter Gourd';
+      case CropType.kalabasa:
+        return 'Squash';
+      case CropType.okra:
+        return 'Okra';
+      case CropType.sitaw:
+        return 'String Beans';
+      case CropType.talong:
+        return 'Eggplant';
+    }
+  }
+
+  /// Emoji for quick visual identification.
+  String get emoji {
+    switch (this) {
+      case CropType.ampalaya:
+        return '🥒';
+      case CropType.kalabasa:
+        return '🎃';
+      case CropType.okra:
+        return '🌿';
+      case CropType.sitaw:
+        return '🫘';
+      case CropType.talong:
+        return '🍆';
     }
   }
 
   IconData get icon {
     switch (this) {
-      case CropType.rice:
-        return Icons.grass_rounded;
-      case CropType.corn:
-        return Icons.spa_rounded;
-      case CropType.vegetable:
+      case CropType.ampalaya:
         return Icons.eco_rounded;
+      case CropType.kalabasa:
+        return Icons.circle_rounded;
+      case CropType.okra:
+        return Icons.grass_rounded;
+      case CropType.sitaw:
+        return Icons.spa_rounded;
+      case CropType.talong:
+        return Icons.local_florist_rounded;
     }
   }
 
   Color get color {
     switch (this) {
-      case CropType.rice:
-        return AppColors.rice;
-      case CropType.corn:
-        return AppColors.corn;
-      case CropType.vegetable:
-        return AppColors.vegetable;
+      case CropType.ampalaya:
+        return AppColors.ampalaya;
+      case CropType.kalabasa:
+        return AppColors.kalabasa;
+      case CropType.okra:
+        return AppColors.okra;
+      case CropType.sitaw:
+        return AppColors.sitaw;
+      case CropType.talong:
+        return AppColors.talong;
     }
   }
 
+  /// The HHC-VNDC Stage-2 deficiency classes for this crop.
+  ///
+  /// All five vegetables share the same four-class output in HHC-VNDC:
+  ///   healthy | nitrogen | phosphorus | potassium
+  List<NutrientType> get relevantNutrients => const [
+        NutrientType.healthy,
+        NutrientType.nitrogen,
+        NutrientType.phosphorus,
+        NutrientType.potassium,
+      ];
+
+  // ---------------------------------------------------------------------------
+  // Serialization helpers
+  // ---------------------------------------------------------------------------
+
+  /// Returns the backend label string (lowercase enum name).
   String toJsonString() => name;
 
+  /// Deserialize from a backend/JSON label string.
+  ///
+  /// Gracefully maps any legacy crop names that may be stored in local history.
   static CropType fromJsonString(String value) {
-    return CropType.values.firstWhere(
-      (e) => e.name == value,
-      orElse: () => CropType.rice,
-    );
+    // Exact match first
+    for (final crop in CropType.values) {
+      if (crop.name == value.toLowerCase()) return crop;
+    }
+    // Legacy mapping for old history entries (pre-HHC-VNDC)
+    const legacyMap = <String, CropType>{
+      'eggplant': CropType.talong,
+      'ashgourd': CropType.kalabasa,
+      'ashgourd_': CropType.kalabasa,
+      'ash_gourd': CropType.kalabasa,
+      'snakegourd': CropType.sitaw,
+      'snake_gourd': CropType.sitaw,
+      'tomato': CropType.okra,
+    };
+    return legacyMap[value.toLowerCase()] ?? CropType.ampalaya;
   }
 }
 
-// ─── Scan Result ─────────────────────────────────────────────────────────────
+// =============================================================================
+// ScanResult
+// =============================================================================
 
-/// Represents a single scan result with detected nutrient deficiency info.
+/// Represents a single completed HHC-VNDC scan.
+///
+/// Produced by [HhcApiService.predict] and stored in local history.
 class ScanResult {
   final String id;
   final String imagePath;
   final DateTime dateTime;
-  final NutrientType detectedNutrient;
-  final double confidence;
-  final Map<NutrientType, double> allPredictions;
+
+  /// The HHC Stage-1 result: which crop was detected.
   final CropType cropType;
+
+  /// The HHC Stage-2 result: which deficiency was detected.
+  final NutrientType detectedNutrient;
+
+  /// Stage-2 deficiency confidence [0.0 – 1.0].
+  final double confidence;
+
+  /// Stage-1 vegetable confidence [0.0 – 1.0].
+  final double vegetableConfidence;
+
+  /// Whether the diagnosis is considered reliable.
+  ///
+  /// Exposed as [true] for all server-side results (the server does not
+  /// apply an ExG foliage check). Kept for API compatibility with screens
+  /// that show a different UI for invalid scans.
+  final bool isValidLeaf;
+
+  /// Optional human-readable error / low-confidence message.
+  final String? errorMessage;
+
+  /// Full probability distribution from Stage-2 (deficiency expert).
+  final Map<NutrientType, double> allPredictions;
+
+  /// Full probability distribution from Stage-1 (vegetable classifier).
+  final Map<String, double> vegetableProbabilities;
+
+  /// Public URL of the image stored in Supabase (may be null).
+  final String? imageUrl;
+
+  /// In-memory image bytes from a live scan (not persisted to disk).
+  final Uint8List? imageBytes;
 
   ScanResult({
     String? id,
     required this.imagePath,
     DateTime? dateTime,
+    required this.cropType,
     required this.detectedNutrient,
     required this.confidence,
+    this.vegetableConfidence = 0.0,
+    this.isValidLeaf = true,
+    this.errorMessage,
     required this.allPredictions,
-    this.cropType = CropType.rice,
+    this.vegetableProbabilities = const {},
+    this.imageUrl,
+    this.imageBytes,
   })  : id = id ?? const Uuid().v4(),
         dateTime = dateTime ?? DateTime.now();
 
-  /// Returns a severity label based on confidence level.
+  /// Severity label based on confidence and deficiency class.
   String get severityLabel {
     if (detectedNutrient == NutrientType.healthy) return 'Healthy';
     if (confidence >= 0.85) return 'Severe';
@@ -89,53 +214,71 @@ class ScanResult {
     return 'Mild';
   }
 
-  /// Returns sorted predictions (highest first).
+  /// Deficiency probabilities sorted highest-first.
   List<MapEntry<NutrientType, double>> get sortedPredictions {
-    final entries = allPredictions.entries.toList();
-    entries.sort((a, b) => b.value.compareTo(a.value));
+    final entries = allPredictions.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
     return entries;
   }
 
-  /// Serialize to JSON map.
+  // ---------------------------------------------------------------------------
+  // Serialization
+  // ---------------------------------------------------------------------------
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'imagePath': imagePath,
         'dateTime': dateTime.toIso8601String(),
+        'cropType': cropType.toJsonString(),
         'detectedNutrient': detectedNutrient.toJsonString(),
         'confidence': confidence,
+        'vegetableConfidence': vegetableConfidence,
+        'isValidLeaf': isValidLeaf,
+        'errorMessage': errorMessage,
         'allPredictions': allPredictions.map(
-          (key, value) => MapEntry(key.toJsonString(), value),
+          (k, v) => MapEntry(k.toJsonString(), v),
         ),
-        'cropType': cropType.toJsonString(),
+        'vegetableProbabilities': vegetableProbabilities,
+        'imageUrl': imageUrl,
+        // imageBytes intentionally excluded — too large to store in prefs
       };
 
-  /// Deserialize from JSON map.
   factory ScanResult.fromJson(Map<String, dynamic> json) {
     final predictionsMap = <NutrientType, double>{};
-    final rawPredictions = json['allPredictions'] as Map<String, dynamic>;
+    final rawPredictions =
+        (json['allPredictions'] as Map<String, dynamic>? ?? {});
     rawPredictions.forEach((key, value) {
       predictionsMap[NutrientTypeExtension.fromJsonString(key)] =
           (value as num).toDouble();
     });
 
+    final rawVegProbs =
+        (json['vegetableProbabilities'] as Map<String, dynamic>? ?? {});
+
     return ScanResult(
       id: json['id'] as String,
       imagePath: json['imagePath'] as String,
       dateTime: DateTime.parse(json['dateTime'] as String),
-      detectedNutrient:
-          NutrientTypeExtension.fromJsonString(json['detectedNutrient'] as String),
-      confidence: (json['confidence'] as num).toDouble(),
-      allPredictions: predictionsMap,
       cropType: json['cropType'] != null
           ? CropTypeExtension.fromJsonString(json['cropType'] as String)
-          : CropType.rice,
+          : CropType.ampalaya,
+      detectedNutrient: NutrientTypeExtension.fromJsonString(
+        json['detectedNutrient'] as String,
+      ),
+      confidence: (json['confidence'] as num).toDouble(),
+      vegetableConfidence:
+          (json['vegetableConfidence'] as num? ?? 0).toDouble(),
+      isValidLeaf: json['isValidLeaf'] as bool? ?? true,
+      errorMessage: json['errorMessage'] as String?,
+      allPredictions: predictionsMap,
+      vegetableProbabilities: rawVegProbs
+          .map((k, v) => MapEntry(k, (v as num).toDouble())),
+      imageUrl: json['imageUrl'] as String?,
     );
   }
 
-  /// Serialize to JSON string.
   String toJsonString() => jsonEncode(toJson());
 
-  /// Deserialize from JSON string.
   factory ScanResult.fromJsonString(String jsonString) =>
       ScanResult.fromJson(jsonDecode(jsonString) as Map<String, dynamic>);
 }

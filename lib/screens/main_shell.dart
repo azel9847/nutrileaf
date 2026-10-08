@@ -88,8 +88,11 @@ class MainShellState extends State<MainShell>
         if (initialCropFilter != null) {
           _historyKey.currentState?.setCropFilter(initialCropFilter);
         }
-      } else if (index == 2 && triggerUpload) {
-        _scanKey.currentState?.pickImage();
+      } else if (index == 2) {
+        _scanKey.currentState?.resetForFocus();
+        if (triggerUpload) {
+          _scanKey.currentState?.pickImage();
+        }
       }
 
       _fadeController.forward();
