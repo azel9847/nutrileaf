@@ -37,6 +37,11 @@ class HhcPrediction {
   /// Null when the backend is not configured with Supabase credentials.
   final String? imageUrl;
 
+  /// Dual-track fertilizer recommendations from the backend catalog.
+  /// Null when the backend does not return a `recommendations` key
+  /// (e.g. an older deployment or an unknown deficiency label).
+  final HhcRecommendations? recommendations;
+
   const HhcPrediction({
     required this.vegetable,
     required this.vegetableConfidence,
@@ -45,14 +50,10 @@ class HhcPrediction {
     required this.deficiencyConfidence,
     required this.deficiencyProbabilities,
     this.imageUrl,
+    this.recommendations,
   });
 
   factory HhcPrediction.fromJson(Map<String, dynamic> json) {
-    // Backend response:
-    // {"crop": "Ampalaya", "crop_confidence": 0.969,
-    //  "deficiency": "Potassium", "deficiency_confidence": 0.925,
-    //  "image_url": null}
-    // The probability maps are no longer returned; they default to {}.
     return HhcPrediction(
       vegetable: json['crop'] as String,
       vegetableConfidence: (json['crop_confidence'] as num).toDouble(),
@@ -61,6 +62,10 @@ class HhcPrediction {
       deficiencyConfidence: (json['deficiency_confidence'] as num).toDouble(),
       deficiencyProbabilities: _parseProbs(json['deficiency_probabilities']),
       imageUrl: json['image_url'] as String?,
+      recommendations: json['recommendations'] != null
+          ? HhcRecommendations.fromJson(
+              json['recommendations'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -82,6 +87,51 @@ class HhcPrediction {
   String toString() =>
       'HhcPrediction(vegetable: $vegetable $vegetableConfidencePct, '
       'deficiency: $diagnosedDeficiency $deficiencyConfidencePct)';
+}
+
+// ---------------------------------------------------------------------------
+// Recommendations model
+// ---------------------------------------------------------------------------
+
+/// One recommendation category (chemical or organic) returned by the backend.
+class HhcRecommendationCategory {
+  final List<String> practices;
+  final List<String> sources;
+
+  const HhcRecommendationCategory({
+    required this.practices,
+    required this.sources,
+  });
+
+  factory HhcRecommendationCategory.fromJson(Map<String, dynamic> json) {
+    return HhcRecommendationCategory(
+      practices: List<String>.from(json['practices'] as List? ?? []),
+      sources: List<String>.from(json['sources'] as List? ?? []),
+    );
+  }
+}
+
+/// Full dual-track recommendation block from the backend catalog.
+class HhcRecommendations {
+  final String description;
+  final HhcRecommendationCategory chemical;
+  final HhcRecommendationCategory organic;
+
+  const HhcRecommendations({
+    required this.description,
+    required this.chemical,
+    required this.organic,
+  });
+
+  factory HhcRecommendations.fromJson(Map<String, dynamic> json) {
+    return HhcRecommendations(
+      description: json['description'] as String? ?? '',
+      chemical: HhcRecommendationCategory.fromJson(
+          json['chemical'] as Map<String, dynamic>? ?? {}),
+      organic: HhcRecommendationCategory.fromJson(
+          json['organic'] as Map<String, dynamic>? ?? {}),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +208,13 @@ class HhcApiService {
     Uint8List imageBytes, {
     String filename = 'leaf.jpg',
   }) async {
+    if (imageBytes.isEmpty) {
+      throw const HhcApiException('The selected image is empty. Please choose another photo.');
+    }
+    if (imageBytes.length > 10 * 1024 * 1024) {
+      throw const HhcApiException('This image is larger than 10 MB. Choose a smaller photo and try again.');
+    }
+
     final uri = Uri.parse('$baseUrl/predict');
     final mime = _mimeFromFilename(filename);
 
@@ -170,6 +227,7 @@ class HhcApiService {
           contentType: MediaType.parse(mime),
         ),
       );
+    request.headers['Accept'] = 'application/json';
 
     late http.StreamedResponse streamed;
     try {
@@ -182,7 +240,13 @@ class HhcApiService {
       );
     }
 
-    final body = await streamed.stream.bytesToString();
+    late final String body;
+    try {
+      body = await streamed.stream.bytesToString().timeout(_timeout);
+    } on Exception catch (e) {
+      debugPrint('[HhcApiService] Failed reading response: $e');
+      throw HhcApiException('The server response could not be read. Please try again. Details: $e');
+    }
 
     if (streamed.statusCode != 200) {
       debugPrint('[HhcApiService] Error: HTTP ${streamed.statusCode}');

@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_fonts/google_fonts.dart';
 import '../utils/constants.dart';
 import '../services/auth_service.dart';
-import 'main_shell.dart';
 import 'login_screen.dart';
 import 'check_email_screen.dart';
 
@@ -171,16 +170,6 @@ class _RegisterScreenState extends State<RegisterScreen>
     }
   }
 
-  void _navigateToApp() {
-    if (AuthService().isLoggedIn) {
-      Navigator.of(context).popUntil((route) => route.isFirst);
-    } else {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const MainShell()),
-        (route) => route.isFirst,
-      );
-    }
-  }
 
   // ── Password strength ───────────────────────────────────────────────────
 
@@ -576,25 +565,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                   ),
                 ),
 
-                // Skip link
-                Center(
-                  child: GestureDetector(
-                    onTap: _navigateToApp,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Text(
-                        'Skip for now',
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: isDark
-                              ? AppColors.darkCaption
-                              : AppColors.softBrown,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
 
                 const SizedBox(height: 8),
               ],

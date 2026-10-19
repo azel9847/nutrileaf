@@ -12,6 +12,8 @@ import 'screens/update_password_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
 
+bool _supabaseInitialized = false;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -51,6 +53,7 @@ void main() async {
         authFlowType: AuthFlowType.pkce,
       ),
     );
+    _supabaseInitialized = true;
     debugPrint('Supabase initialized successfully.');
   } catch (e) {
     debugPrint('Error initializing Supabase: $e');
@@ -95,7 +98,7 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   bool _showSplash = true;
   bool _isRecoveringPassword = false;
-  late final StreamSubscription<AuthState> _authSubscription;
+  StreamSubscription<AuthState>? _authSubscription;
 
   @override
   void initState() {
@@ -104,6 +107,8 @@ class _AuthGateState extends State<AuthGate> {
     Future.delayed(const Duration(milliseconds: 2500), () {
       if (mounted) setState(() => _showSplash = false);
     });
+
+    if (!_supabaseInitialized) return;
 
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
       final event = data.event;
@@ -145,7 +150,7 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   void dispose() {
-    _authSubscription.cancel();
+    _authSubscription?.cancel();
     super.dispose();
   }
 
@@ -154,6 +159,8 @@ class _AuthGateState extends State<AuthGate> {
     if (_showSplash) return const SplashScreen();
 
     if (_isRecoveringPassword) return const UpdatePasswordScreen();
+
+    if (!_supabaseInitialized) return const LandingScreen();
 
     final session = Supabase.instance.client.auth.currentSession;
     if (session != null) {

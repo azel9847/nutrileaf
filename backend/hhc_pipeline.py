@@ -2,25 +2,27 @@
 
 Architecture
 ------------
-Stage 1  — MobileNetV4-Conv-Small (timm: mobilenetv4_conv_small.e2400_r224_in1k)
+Stage 1  — ConvNeXt-Tiny (timm: convnext_tiny)
            Classifies leaf images into one of 5 vegetables:
            ampalaya, kalabasa, okra, sitaw, talong.
 
-Stage 2  — MobileViT-S (timm: mobilevit_s.cvnets_in1k)
-           Classifies deficiency from the same preprocessed image into:
+Stage 2  — MobileViT-S unified deficiency expert (timm: mobilevit_s.cvnets_in1k)
+           Classifies nutrient deficiency across crops into:
            healthy, nitrogen, phosphorus, potassium.
+           All crop expert branches route directly to this unified model.
 
 Both models receive the same 224×224 ImageNet-normalised tensor.
-Stage 2 is run unconditionally (not per-vegetable expert) on the full
-4-class deficiency head; the Stage 1 crop label is reported alongside.
+Stage 2 runs the unified expert model using the Stage-1 crop prediction context.
 
 Checkpoint configuration (via environment variables)
 ----------------------------------------------------
-HHC_STAGE1_CHECKPOINT   — path to MobileNetV4 Stage-1 .pth file
-                          (default: models/mobilenetv4_stage1.pth)
-HHC_STAGE2_CHECKPOINT   — path to MobileViT-S Stage-2 .pth file
-                          (default: models/mobilevit_stage2.pth)
-HHC_DEVICE              — "cpu" (default) or "cuda"
+HHC_STAGE1_CHECKPOINT          — path to ConvNeXt Stage-1 .pth file
+                                  (default: backend/models/convnext_stage1.pth)
+HHC_STAGE2_CHECKPOINT          — path to MobileViT Stage-2 unified expert .pth file
+                                  (default: backend/models/mobilevit_stage2.pth)
+HHC_STAGE2_LABELS              — comma-separated unified deficiency labels (optional)
+HHC_EXPERT_<CROP>_LABELS       — comma-separated per-crop label overrides (optional)
+HHC_DEVICE                     — "cpu" (default) or "cuda"
 """
 from __future__ import annotations
 
@@ -45,9 +47,28 @@ logger = logging.getLogger("nutrileaf.hhc")
 VEGETABLES: tuple[str, ...] = ("ampalaya", "kalabasa", "okra", "sitaw", "talong")
 DEFICIENCIES: tuple[str, ...] = ("healthy", "nitrogen", "phosphorus", "potassium")
 
-# Default relative checkpoint paths (resolved from the backend working directory)
-_DEFAULT_STAGE1_PATH = Path("models/mobilenetv4_stage1.pth")
-_DEFAULT_STAGE2_PATH = Path("models/mobilevit_stage2.pth")
+# Default checkpoint paths (configurable via HHC_STAGE1_CHECKPOINT and HHC_STAGE2_CHECKPOINT)
+_DEFAULT_STAGE1_PATH = Path("backend/models/convnext_stage1.pth")
+_DEFAULT_STAGE2_PATH = Path("backend/models/mobilevit_stage2.pth")
+
+# Default per-crop label lists (must match ImageFolder alphabetical order used during training).
+# Overridable via HHC_STAGE2_LABELS or HHC_EXPERT_<CROP>_LABELS env vars.
+_DEFAULT_EXPERT_LABELS: dict[str, tuple[str, ...]] = {
+    "ampalaya": ("healthy", "nitrogen", "phosphorus", "potassium"),
+    "kalabasa": ("healthy", "nitrogen", "phosphorus", "potassium"),
+    "okra":     ("healthy", "nitrogen", "phosphorus", "potassium"),
+    "sitaw":    ("healthy", "nitrogen", "phosphorus", "potassium"),
+    "talong":   ("healthy", "nitrogen", "phosphorus", "potassium"),
+}
+
+# Per-crop env-var names for optional label list overrides
+_EXPERT_LABELS_VARS: dict[str, str] = {
+    "ampalaya": "HHC_EXPERT_AMPALAYA_LABELS",
+    "kalabasa": "HHC_EXPERT_KALABASA_LABELS",
+    "okra":     "HHC_EXPERT_OKRA_LABELS",
+    "sitaw":    "HHC_EXPERT_SITAW_LABELS",
+    "talong":   "HHC_EXPERT_TALONG_LABELS",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +76,7 @@ _DEFAULT_STAGE2_PATH = Path("models/mobilevit_stage2.pth")
 # ---------------------------------------------------------------------------
 
 # Resize to 224×224, convert to float tensor in [0, 1], then ImageNet-normalise.
-# Both MobileNetV4 and MobileViT-S were fine-tuned on 224×224 inputs with
+# ConvNeXt-Tiny and MobileViT-S are both fine-tuned on 224×224 inputs with
 # these exact mean/std values; no crop step is needed when the Flutter
 # frontend already sends a 1:1 square image.
 _TRANSFORM = transforms.Compose([
@@ -72,7 +93,7 @@ _TRANSFORM = transforms.Compose([
 # Checkpoint loading helper
 # ---------------------------------------------------------------------------
 
-def _load_state_dict(model: nn.Module, path: Path) -> nn.Module:
+def _load_state_dict(model: nn.Module, path: Path, *, map_location: Any = "cpu") -> nn.Module:
     """Load a .pth checkpoint into *model* in-place and return it.
 
     Handles three common checkpoint formats:
@@ -85,7 +106,7 @@ def _load_state_dict(model: nn.Module, path: Path) -> nn.Module:
     A ``"module."`` prefix (added by DataParallel / DDP) is stripped
     automatically before loading.
     """
-    payload: Any = torch.load(path, map_location="cpu", weights_only=False)
+    payload: Any = torch.load(path, map_location=map_location, weights_only=False)
 
     if isinstance(payload, nn.Module):
         logger.info("Checkpoint '%s' is a serialised nn.Module — using directly.", path.name)
@@ -115,96 +136,6 @@ def _load_state_dict(model: nn.Module, path: Path) -> nn.Module:
     return model
 
 
-# Legacy key fragments from old fusion checkpoints that must be purged before
-# loading into a pure MobileNetV4 model.  Any state_dict key whose name
-# contains one of these substrings belongs to a removed sub-network and would
-# cause load_state_dict to raise unexpected-key warnings or silently corrupt
-# the model if loaded via strict=False without filtering.
-_LEGACY_KEY_FRAGMENTS: tuple[str, ...] = ("swin", "cbam", "efficient")
-
-
-def _load_stage1_state_dict(model: nn.Module, path: Path) -> nn.Module:
-    """Load a MobileNetV4 Stage-1 checkpoint with dynamic weight cleaning.
-
-    This function is needed because Stage-1 .pth files may have been saved
-    from an older fusion architecture (EfficientNetV2-S + Swin-T + CBAM).
-    The cleaning steps below make loading safe and deterministic:
-
-    1. Unwrap training-wrapper dicts (``state_dict`` / ``model_state_dict`` key).
-    2. Strip the ``"module."`` DDP/DataParallel prefix from all keys.
-    3. **Filter** — remove any key containing ``'swin'``, ``'cbam'``, or
-       ``'efficient'``.  These belong to removed sub-networks and must not
-       be injected into a pure MobileNetV4 model.
-    4. **Classifier shape guard** — if the checkpoint's ``classifier.weight``
-       shape does not match the model's expected shape, drop both
-       ``classifier.weight`` and ``classifier.bias`` so the randomly
-       initialised head is used instead of a mismatched one.
-    5. Load the cleaned dict with ``strict=False`` and log key statistics.
-    """
-    payload: Any = torch.load(path, map_location="cpu", weights_only=False)
-
-    # Unwrap serialised nn.Module checkpoints
-    if isinstance(payload, nn.Module):
-        logger.info("Stage-1 checkpoint '%s' is a serialised nn.Module — using directly.", path.name)
-        return payload
-
-    if isinstance(payload, dict):
-        raw_sd = payload.get("state_dict", payload.get("model_state_dict", payload))
-    else:
-        raise ValueError(
-            f"Unsupported checkpoint format at '{path}'. "
-            "Expected nn.Module, state_dict dict, or training wrapper dict."
-        )
-
-    # Step 1 — strip DDP / DataParallel prefix
-    stripped: dict[str, Any] = {
-        str(k).removeprefix("module."): v for k, v in raw_sd.items()
-    }
-
-    # Step 2 — purge legacy sub-network keys (Swin, CBAM, EfficientNet)
-    cleaned_dict: dict[str, Any] = {
-        k: v for k, v in stripped.items()
-        if not any(frag in k.lower() for frag in _LEGACY_KEY_FRAGMENTS)
-    }
-    purged = len(stripped) - len(cleaned_dict)
-    if purged:
-        logger.info(
-            "Stage-1: purged %d legacy key(s) containing %s from checkpoint.",
-            purged, _LEGACY_KEY_FRAGMENTS,
-        )
-
-    # Step 3 — classifier shape guard
-    expected_shape = model.classifier.weight.shape  # type: ignore[union-attr]
-    if "classifier.weight" in cleaned_dict:
-        ckpt_shape = cleaned_dict["classifier.weight"].shape
-        if ckpt_shape != expected_shape:
-            logger.warning(
-                "Stage-1: classifier.weight shape mismatch — "
-                "checkpoint has %s, model expects %s. "
-                "Dropping classifier weights; head will use random init.",
-                ckpt_shape, expected_shape,
-            )
-            cleaned_dict.pop("classifier.weight", None)
-            cleaned_dict.pop("classifier.bias", None)
-
-    # Step 4 — load with strict=False and report
-    missing, unexpected = model.load_state_dict(cleaned_dict, strict=False)
-    if missing:
-        logger.warning("Stage-1: %d missing key(s) after cleaning.", len(missing))
-        logger.debug("Missing: %s", missing)
-    if unexpected:
-        logger.warning("Stage-1: %d unexpected key(s) after cleaning.", len(unexpected))
-        logger.debug("Unexpected: %s", unexpected)
-
-    logger.info(
-        "Stage-1: loaded %d/%d keys from '%s'.",
-        len(cleaned_dict) - len(unexpected),
-        len(cleaned_dict),
-        path.name,
-    )
-    return model
-
-
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
@@ -212,11 +143,12 @@ def _load_stage1_state_dict(model: nn.Module, path: Path) -> nn.Module:
 class HHCInferencePipeline:
     """Two-stage HHC-VNDC inference pipeline.
 
-    Stage 1 — MobileNetV4-Conv-Small: identifies the vegetable crop.
-    Stage 2 — MobileViT-S: diagnoses the nutrient deficiency.
+    Stage 1 — ConvNeXt-Tiny: identifies the vegetable crop.
+    Stage 2 — MobileViT-S per-crop expert: diagnoses the nutrient deficiency.
 
     Both stages consume the *same* preprocessed 224×224 tensor so the
-    preprocessing cost is paid only once per request.
+    preprocessing cost is paid only once per request.  Stage 2 selects the
+    expert model that corresponds to the Stage-1 crop prediction.
 
     Usage::
 
@@ -231,7 +163,7 @@ class HHCInferencePipeline:
         confidence_stage1        — Stage-1 top-class softmax probability (float)
         confidence_stage2        — Stage-2 top-class softmax probability (float)
         vegetable_probabilities  — {vegetable: prob} for all 5 Stage-1 classes
-        deficiency_probabilities — {deficiency: prob} for all 4 Stage-2 classes
+        deficiency_probabilities — {deficiency: prob} for all Stage-2 expert classes
     """
 
     def __init__(self) -> None:
@@ -240,6 +172,10 @@ class HHCInferencePipeline:
         )
         self.stage1: nn.Module | None = None
         self.stage2: nn.Module | None = None
+        # Per-crop expert models (routed to the unified MobileViT-S model): {crop_name: nn.Module}
+        self.experts: dict[str, nn.Module] = {}
+        # Per-crop label lists: {crop_name: tuple[str, ...]}
+        self.expert_labels: dict[str, tuple[str, ...]] = {}
         self._load_error: str | None = None
         self._load_models()
 
@@ -249,11 +185,11 @@ class HHCInferencePipeline:
 
     @property
     def ready(self) -> bool:
-        """True when both models loaded without error."""
+        """True when Stage-1 and Stage-2 models loaded without error."""
         return (
             self._load_error is None
             and self.stage1 is not None
-            and self.stage2 is not None
+            and (self.stage2 is not None or len(self.experts) == len(VEGETABLES))
         )
 
     @property
@@ -262,28 +198,72 @@ class HHCInferencePipeline:
         return self._load_error
 
     # ------------------------------------------------------------------
-    # Model loading
+    # Internal helpers
     # ------------------------------------------------------------------
 
     def _resolve_checkpoint(self, env_var: str, default: Path) -> Path:
         """Return the checkpoint path from an env var, falling back to *default*."""
         raw = os.getenv(env_var, "").strip()
-        return Path(raw) if raw else default
+        if raw:
+            p = Path(raw)
+            if p.exists():
+                return p
+            # Try relative to repo root if given path doesn't exist
+            alt = Path(__file__).resolve().parent.parent / raw
+            if alt.exists():
+                return alt
+            return p
+        if default.exists():
+            return default
+        # If running from inside backend/ directory, try models/<filename>
+        alt_models = Path("models") / default.name
+        if alt_models.exists():
+            return alt_models
+        # Try relative to this file's parent directory
+        alt_parent = Path(__file__).resolve().parent / "models" / default.name
+        if alt_parent.exists():
+            return alt_parent
+        return default
+
+    def _resolve_labels(self, crop: str) -> tuple[str, ...]:
+        """Return label tuple for *crop* from env var or built-in default."""
+        env_var = _EXPERT_LABELS_VARS.get(crop, "")
+        raw = os.getenv(env_var, "").strip() if env_var else ""
+        if raw:
+            return tuple(lbl.strip() for lbl in raw.split(",") if lbl.strip())
+        stage2_raw = os.getenv("HHC_STAGE2_LABELS", "").strip()
+        if stage2_raw:
+            return tuple(lbl.strip() for lbl in stage2_raw.split(",") if lbl.strip())
+        return _DEFAULT_EXPERT_LABELS.get(crop, DEFICIENCIES)
+
+    # ------------------------------------------------------------------
+    # Model loading
+    # ------------------------------------------------------------------
 
     def _load_models(self) -> None:
-        """Instantiate and load both stage models.
+        """Instantiate and load Stage-1 ConvNeXt and Stage-2 MobileViT unified expert.
 
         Sets ``self._load_error`` on any failure so the server can surface a
         descriptive message without crashing at import time.
         """
-        stage1_path = self._resolve_checkpoint("HHC_STAGE1_CHECKPOINT", _DEFAULT_STAGE1_PATH)
-        stage2_path = self._resolve_checkpoint("HHC_STAGE2_CHECKPOINT", _DEFAULT_STAGE2_PATH)
+        # ── Resolve core checkpoint paths ───────────────────────────────────────
+        stage1_path = self._resolve_checkpoint(
+            "HHC_STAGE1_CHECKPOINT", _DEFAULT_STAGE1_PATH
+        )
+        stage2_path = self._resolve_checkpoint(
+            "HHC_STAGE2_CHECKPOINT", _DEFAULT_STAGE2_PATH
+        )
 
+        # ── Validate existence before loading ──────────────────────────────────
         missing: list[str] = []
         if not stage1_path.exists():
-            missing.append(f"Stage-1 (MobileNetV4) checkpoint not found: '{stage1_path}'")
+            missing.append(
+                f"Stage 1 (ConvNeXt) checkpoint not found: '{stage1_path}' [set HHC_STAGE1_CHECKPOINT]"
+            )
         if not stage2_path.exists():
-            missing.append(f"Stage-2 (MobileViT-S)  checkpoint not found: '{stage2_path}'")
+            missing.append(
+                f"Stage 2 (MobileViT) checkpoint not found: '{stage2_path}' [set HHC_STAGE2_CHECKPOINT]"
+            )
 
         if missing:
             self._load_error = (
@@ -295,18 +275,15 @@ class HHCInferencePipeline:
             return
 
         try:
-            # ── Stage 1: MobileNetV4-Conv-Small ──────────────────────────────
-            # Uses a dedicated loader that strips legacy Swin/CBAM/EfficientNet
-            # keys that may still be present in the .pth file, and guards
-            # against classifier head shape mismatches.
-            logger.info("Loading Stage-1 (MobileNetV4) from '%s' ...", stage1_path)
+            # ── Stage 1: ConvNeXt-Tiny (Crop Classifier) ────────────────────────
+            logger.info("Loading Stage-1 (ConvNeXt-Tiny) from '%s' ...", stage1_path)
             s1 = timm.create_model(
-                "mobilenetv4_conv_small.e2400_r224_in1k",
+                "convnext_tiny",
                 pretrained=False,
                 num_classes=len(VEGETABLES),
             )
             self.stage1 = (
-                _load_stage1_state_dict(s1, stage1_path)
+                _load_state_dict(s1, stage1_path, map_location=str(self.device))
                 .to(self.device)
                 .eval()
             )
@@ -314,21 +291,32 @@ class HHCInferencePipeline:
                 "Stage-1 ready — %d classes: %s", len(VEGETABLES), VEGETABLES
             )
 
-            # ── Stage 2: MobileViT-S ─────────────────────────────────────────
-            logger.info("Loading Stage-2 (MobileViT-S) from '%s' ...", stage2_path)
+            # ── Stage 2: MobileViT-S (Unified Deficiency Expert) ───────────────
+            logger.info(
+                "Loading Stage-2 unified expert (MobileViT-S, %d classes) from '%s' ...",
+                len(DEFICIENCIES), stage2_path,
+            )
             s2 = timm.create_model(
                 "mobilevit_s.cvnets_in1k",
                 pretrained=False,
                 num_classes=len(DEFICIENCIES),
             )
-            self.stage2 = (
-                _load_state_dict(s2, stage2_path)
+            unified_expert = (
+                _load_state_dict(s2, stage2_path, map_location=str(self.device))
                 .to(self.device)
                 .eval()
             )
-            logger.info(
-                "Stage-2 ready — %d classes: %s", len(DEFICIENCIES), DEFICIENCIES
-            )
+            self.stage2 = unified_expert
+
+            # Route all crop expert branches directly to the unified MobileViT expert
+            for crop in VEGETABLES:
+                labels = self._resolve_labels(crop)
+                self.expert_labels[crop] = labels
+                self.experts[crop] = unified_expert
+                logger.info(
+                    "Stage-2 crop expert '%s' routed to unified MobileViT-S — labels: %s",
+                    crop, labels,
+                )
 
             logger.info(
                 "HHC-VNDC pipeline fully loaded on device '%s'.", self.device
@@ -359,8 +347,8 @@ class HHCInferencePipeline:
             deficiency               — predicted deficiency label (str)
             confidence_stage1        — Stage-1 top-class softmax probability (float)
             confidence_stage2        — Stage-2 top-class softmax probability (float)
-            vegetable_probabilities  — {vegetable: prob} for all 5 classes
-            deficiency_probabilities — {deficiency: prob} for all 4 classes
+            vegetable_probabilities  — {vegetable: prob} for all 5 Stage-1 classes
+            deficiency_probabilities — {deficiency: prob} for all Stage-2 expert classes
         """
         if not self.ready:
             raise RuntimeError(self.load_error or "HHC pipeline is unavailable.")
@@ -374,7 +362,7 @@ class HHCInferencePipeline:
 
         logger.debug("Input image size: %s  |  tensor shape: %s", image.size, tensor.shape)
 
-        # ── Stage 1: crop identification ──────────────────────────────────────
+        # ── Stage 1: crop identification (ConvNeXt-Tiny) ──────────────────────
         veg_logits = self.stage1(tensor)                          # type: ignore[misc]
         veg_probs = torch.softmax(veg_logits, dim=1)[0]
         veg_idx = int(veg_probs.argmax())
@@ -383,11 +371,14 @@ class HHCInferencePipeline:
 
         logger.info("Stage-1 → %s (%.1f%%)", crop, confidence_stage1 * 100)
 
-        # ── Stage 2: deficiency diagnosis (same tensor, independent pass) ─────
-        def_logits = self.stage2(tensor)                          # type: ignore[misc]
+        # ── Stage 2: expert deficiency diagnosis (MobileViT-S) ────────────────
+        expert_model = self.experts[crop]
+        labels = self.expert_labels[crop]
+
+        def_logits = expert_model(tensor)                         # type: ignore[misc]
         def_probs = torch.softmax(def_logits, dim=1)[0]
         def_idx = int(def_probs.argmax())
-        deficiency = DEFICIENCIES[def_idx]
+        deficiency = labels[def_idx]
         confidence_stage2 = round(float(def_probs[def_idx]), 6)
 
         logger.info("Stage-2 → %s (%.1f%%)", deficiency, confidence_stage2 * 100)
@@ -403,6 +394,6 @@ class HHCInferencePipeline:
             },
             "deficiency_probabilities": {
                 label: round(float(prob), 6)
-                for label, prob in zip(DEFICIENCIES, def_probs)
+                for label, prob in zip(labels, def_probs)
             },
         }

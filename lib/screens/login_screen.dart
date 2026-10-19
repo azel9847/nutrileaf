@@ -68,10 +68,22 @@ class _LoginScreenState extends State<LoginScreen>
     FocusManager.instance.primaryFocus?.unfocus();
     await Future.delayed(const Duration(milliseconds: 50));
 
-    final result = await AuthService().signInWithPassword(
-      email: _emailController.text.trim(),
-      password: _passwordController.text,
-    );
+    late final AuthResult result;
+    try {
+      result = await AuthService().signInWithPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+    } catch (e, stackTrace) {
+      debugPrint('[NutriLeaf] Login failed unexpectedly: $e\n$stackTrace');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Unable to sign in right now. Please try again.';
+        });
+      }
+      return;
+    }
 
     if (!mounted) return;
 
@@ -98,12 +110,26 @@ class _LoginScreenState extends State<LoginScreen>
       _isUnverified = false;
     });
 
-    final result = await AuthService().signInWithGoogle();
+    late final AuthResult result;
+    try {
+      result = await AuthService().signInWithGoogle();
+    } catch (e, stackTrace) {
+      debugPrint('[NutriLeaf] Google sign-in failed unexpectedly: $e\n$stackTrace');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Unable to start Google sign-in. Please try again.';
+        });
+      }
+      return;
+    }
 
     if (!mounted) return;
 
     if (result.isSuccess) {
-      _navigateToApp();
+      // OAuth has only launched the external browser. AuthGate routes after
+      // Supabase emits a signed-in event for the completed callback.
+      setState(() => _isLoading = false);
     } else {
       setState(() {
         _isLoading = false;
@@ -436,25 +462,6 @@ class _LoginScreenState extends State<LoginScreen>
                   ),
                 ),
 
-                // Skip link
-                Center(
-                  child: GestureDetector(
-                    onTap: _navigateToApp,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Text(
-                        'Skip for now',
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: isDark
-                              ? AppColors.darkCaption
-                              : AppColors.softBrown,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
 
                 const SizedBox(height: 8),
               ],

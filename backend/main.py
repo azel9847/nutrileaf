@@ -26,6 +26,8 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from supabase import Client, create_client
 from torchvision import transforms
 
+from recommendations import get_recommendations
+
 # ---------------------------------------------------------------------------
 # Bootstrap / configuration
 # ---------------------------------------------------------------------------
@@ -40,8 +42,8 @@ logger = logging.getLogger("nutrileaf")
 BASE_DIR = Path(__file__).resolve().parent
 MODELS_DIR = BASE_DIR / "models"
 
-STAGE1_WEIGHTS = Path(os.getenv("STAGE1_WEIGHTS", MODELS_DIR / "convnext_stage1.pth"))
-STAGE2_WEIGHTS = Path(os.getenv("STAGE2_WEIGHTS", MODELS_DIR / "mobilevit_stage2.pth"))
+STAGE1_WEIGHTS = Path(os.getenv("STAGE1_WEIGHTS", str(MODELS_DIR / "convnext_stage1.pth")))
+STAGE2_WEIGHTS = Path(os.getenv("STAGE2_WEIGHTS", str(MODELS_DIR / "mobilevit_stage2.pth")))
 
 # Alphabetically sorted (matches PyTorch ImageFolder index order).
 STAGE1_CLASSES = ["Ampalaya", "Kalabasa", "Okra", "Sitaw", "Talong"]
@@ -178,12 +180,31 @@ def run_pipeline(image_bytes: bytes) -> dict[str, object]:
     else:
         def_idx = int(def_probs.argmax())
 
-    return {
+    deficiency_label = DEFICIENCY_CLASSES[def_idx]
+    deficiency_conf = round(float(def_probs[def_idx]), 4)
+
+    # Attach dual recommendations (chemical + organic) with citations.
+    try:
+        recs = get_recommendations(deficiency_label)
+    except KeyError:
+        logger.warning(
+            "No recommendations found for deficiency label '%s'.", deficiency_label
+        )
+        recs = None
+
+    result: dict[str, object] = {
         "crop": crop,
         "crop_confidence": round(crop_conf, 4),
-        "deficiency": DEFICIENCY_CLASSES[def_idx],
-        "deficiency_confidence": round(float(def_probs[def_idx]), 4),
+        "deficiency": deficiency_label,
+        "deficiency_confidence": deficiency_conf,
     }
+    if recs is not None:
+        result["recommendations"] = {
+            "description": recs["description"],
+            "chemical": recs["chemical"],
+            "organic": recs["organic"],
+        }
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -204,12 +225,21 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Configurable origins: set ALLOWED_ORIGINS="https://app.example.com,https://other.com"
+# in .env for production. Falls back to the Cloud Run service URL, then
+# denies all other origins so the wildcard is never shipped in production.
+_raw_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "https://nutrileaf-backend-502370293163.asia-southeast1.run.app",
+)
+_ALLOWED_ORIGINS: list[str] = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -245,7 +275,25 @@ async def predict(image: UploadFile = File(...)) -> dict[str, object]:
     if not image.filename:
         raise HTTPException(status_code=400, detail="No image file provided.")
 
-    image_bytes = await image.read()
+    # ── MIME / extension guard — accept only safe image types ─────────────────
+    _ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
+    _ALLOWED_EXT  = {".jpg", ".jpeg", ".png", ".webp"}
+    content_type = (image.content_type or "").lower().split(";")[0].strip()
+    filename_ext = os.path.splitext(image.filename or "")[1].lower()
+    if content_type not in _ALLOWED_MIME and filename_ext not in _ALLOWED_EXT:
+        raise HTTPException(
+            status_code=415,
+            detail="Unsupported file type. Upload a JPEG, PNG, or WebP image.",
+        )
+
+    # ── Payload size cap (10 MB) ────────────────────────────────────────────────
+    _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+    image_bytes = await image.read(_MAX_UPLOAD_BYTES + 1)
+    if len(image_bytes) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="Image too large. Maximum upload size is 10 MB.",
+        )
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Uploaded image file is empty.")
 
@@ -297,10 +345,14 @@ async def _persist_diagnosis(
 
         supabase.table("diagnoses_history").insert(
             {
-                "vegetable": str(prediction["crop"]),
-                "vegetable_confidence": float(prediction["crop_confidence"]),  # type: ignore[arg-type]
-                "diagnosed_deficiency": str(prediction["deficiency"]),
-                "deficiency_confidence": float(prediction["deficiency_confidence"]),  # type: ignore[arg-type]
+                "vegetable": str(prediction.get("crop", "unknown")),
+                "vegetable_confidence": float(
+                    prediction.get("crop_confidence", prediction.get("confidence_stage1", 0.0))
+                ),
+                "diagnosed_deficiency": str(prediction.get("deficiency", "unknown")),
+                "deficiency_confidence": float(
+                    prediction.get("deficiency_confidence", prediction.get("confidence_stage2", 0.0))
+                ),
                 "image_url": image_url,
                 "storage_path": storage_path,
             }

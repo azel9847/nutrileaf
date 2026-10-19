@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
@@ -27,7 +28,8 @@ class ScanScreen extends StatefulWidget {
   State<ScanScreen> createState() => ScanScreenState();
 }
 
-class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
+class ScanScreenState extends State<ScanScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   // ── Image state ─────────────────────────────────────────────────────────────
   PickedImage? _selectedImage;
   Uint8List? _selectedImageBytes;
@@ -43,6 +45,12 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   bool _isCameraInitialized = false;
   FlashMode _flashMode = FlashMode.off;
   bool _isTakingPicture = false;
+  bool _isCameraInitializing = false;
+  bool _isAppResumed = true;
+  int _cameraGeneration = 0;
+
+  Timer? _stageOneTimer;
+  Timer? _stageTwoTimer;
 
   // ── Animation ────────────────────────────────────────────────────────────────
   late AnimationController _pulseController;
@@ -53,6 +61,8 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1200),
       vsync: this,
@@ -71,25 +81,72 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     }
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _isAppResumed = false;
+      _cameraGeneration++;
+      final cameraController = _cameraController;
+      _cameraController = null;
+      if (cameraController != null) unawaited(cameraController.dispose());
+      if (mounted) {
+        setState(() => _isCameraInitialized = false);
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      _isAppResumed = true;
+      if (_cameraController == null) {
+        unawaited(_initCamera());
+      }
+    }
+  }
+
   Future<void> _initCamera() async {
+    if (_isCameraInitializing || !mounted || !_isAppResumed) return;
+    _isCameraInitializing = true;
+    final generation = ++_cameraGeneration;
+    CameraController? controller;
     try {
       final cameras = await availableCameras();
-      if (cameras.isEmpty) return;
+      if (cameras.isEmpty || !mounted || generation != _cameraGeneration) return;
 
-      _cameraController = CameraController(
+      controller = CameraController(
         cameras.first,
         ResolutionPreset.high,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
 
-      await _cameraController!.initialize();
-      await _cameraController!.setFlashMode(FlashMode.off);
+      _cameraController = controller;
+
+      await controller.initialize();
+      if (!mounted ||
+          generation != _cameraGeneration ||
+          !identical(_cameraController, controller)) {
+        await controller.dispose();
+        return;
+      }
+      await controller.setFlashMode(_flashMode);
       if (mounted) {
         setState(() => _isCameraInitialized = true);
       }
     } catch (e) {
+      if (controller != null) {
+        if (identical(_cameraController, controller)) {
+          _cameraController = null;
+        }
+        unawaited(controller.dispose());
+      }
       debugPrint('[NutriLeaf] Camera init error: $e');
+    } finally {
+      _isCameraInitializing = false;
+      if (mounted &&
+          _isAppResumed &&
+          generation != _cameraGeneration &&
+          _cameraController == null) {
+        unawaited(_initCamera());
+      }
     }
   }
 
@@ -103,7 +160,13 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    _cameraController?.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _cameraGeneration++;
+    _stageOneTimer?.cancel();
+    _stageTwoTimer?.cancel();
+    final cameraController = _cameraController;
+    _cameraController = null;
+    if (cameraController != null) unawaited(cameraController.dispose());
     _pulseController.dispose();
     super.dispose();
   }
@@ -130,14 +193,16 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   /// Safely calls resumePreview, guarding against disposed/uninitialised state.
   Future<void> _safeResumePreview() async {
     try {
-      if (_cameraController != null &&
-          _cameraController!.value.isInitialized &&
+      if (_cameraController == null) {
+        await _initCamera();
+        return;
+      }
+      if (_cameraController!.value.isInitialized &&
           !_cameraController!.value.isPreviewPaused) {
         // Already streaming — nothing to do.
         return;
       }
-      if (_cameraController != null &&
-          _cameraController!.value.isInitialized) {
+      if (_cameraController!.value.isInitialized) {
         await _cameraController!.resumePreview();
       }
     } catch (e) {
@@ -195,25 +260,29 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
       // Center-square crop to match the viewfinder reticle.
       final bytes = await xFile.readAsBytes();
-      final image = img.decodeImage(bytes);
-      if (image != null) {
-        final size = image.width < image.height ? image.width : image.height;
-        final x = (image.width - size) ~/ 2;
-        final y = (image.height - size) ~/ 2;
-
-        final cropped =
-            img.copyCrop(image, x: x, y: y, width: size, height: size);
-        final croppedBytes = img.encodeJpg(cropped, quality: 90);
-
-        final croppedXFile = XFile.fromData(
-          Uint8List.fromList(croppedBytes),
-          name: 'crop_${xFile.name}',
-          path: xFile.path,
-        );
-        final picked = PickedImage(xFile: croppedXFile);
-
-        if (mounted) await _openPreview(picked, fromCamera: true);
+      final decodedImage = img.decodeImage(bytes);
+      if (decodedImage == null) {
+        throw const FormatException('Captured image could not be decoded.');
       }
+      final image = img.bakeOrientation(decodedImage);
+      final size = image.width < image.height ? image.width : image.height;
+      final x = (image.width - size) ~/ 2;
+      final y = (image.height - size) ~/ 2;
+      final cropped = img.copyCrop(image, x: x, y: y, width: size, height: size);
+      final resized = size > 1024
+          ? img.copyResize(cropped, width: 1024, height: 1024)
+          : cropped;
+      final croppedBytes = img.encodeJpg(resized, quality: 85);
+
+      final croppedXFile = XFile.fromData(
+        Uint8List.fromList(croppedBytes),
+        name: 'crop_${xFile.name}',
+        mimeType: 'image/jpeg',
+        path: xFile.path,
+      );
+      final picked = PickedImage(xFile: croppedXFile);
+
+      if (mounted) await _openPreview(picked, fromCamera: true);
     } catch (e) {
       if (mounted) _showSnackError('Failed to capture photo: $e');
     } finally {
@@ -248,9 +317,17 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       {required bool fromCamera}) async {
     if (!mounted) return;
 
-    final String imagePath = picked.path;
-    final Uint8List bytes =
-        Uint8List.fromList(await picked.readAsBytes());
+    late final String imagePath;
+    late final Uint8List bytes;
+    try {
+      imagePath = picked.path;
+      bytes = Uint8List.fromList(await picked.readAsBytes());
+      if (bytes.isEmpty) throw const FormatException('The selected image is empty.');
+    } catch (e) {
+      debugPrint('[NutriLeaf] Could not read selected image: $e');
+      if (mounted) _showSnackError('Could not open this image. Please choose another photo.');
+      return;
+    }
 
     if (!mounted) return;
 
@@ -329,12 +406,14 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     _pulseController.repeat(reverse: true);
 
     try {
-      Future.delayed(const Duration(milliseconds: 800), () {
+      _stageOneTimer?.cancel();
+      _stageTwoTimer?.cancel();
+      _stageOneTimer = Timer(const Duration(milliseconds: 800), () {
         if (mounted && _isAnalyzing) {
           setState(() => _analysisStage = 'Stage 1 — Identifying vegetable…');
         }
       });
-      Future.delayed(const Duration(milliseconds: 2000), () {
+      _stageTwoTimer = Timer(const Duration(milliseconds: 2000), () {
         if (mounted && _isAnalyzing) {
           setState(
               () => _analysisStage = 'Stage 2 — Diagnosing deficiency…');
@@ -348,6 +427,8 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
       if (mounted) {
         _pulseController.stop();
+        _stageOneTimer?.cancel();
+        _stageTwoTimer?.cancel();
         setState(() {
           _isAnalyzing = false;
           _analysisStage = '';
@@ -360,6 +441,8 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       debugPrint('[NutriLeaf] HHC inference failed: $e');
       if (mounted) {
         _pulseController.stop();
+        _stageOneTimer?.cancel();
+        _stageTwoTimer?.cancel();
         setState(() {
           _isAnalyzing = false;
           _analysisStage = '';
@@ -621,32 +704,27 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   Widget _buildLiveCameraPreview() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Scale the CameraPreview to fill the box while preserving aspect ratio.
-        final camAspect = _cameraController!.value.aspectRatio;
-        final boxAspect = constraints.maxWidth / constraints.maxHeight;
-
-        double previewW, previewH;
-        if (camAspect > boxAspect) {
-          // Camera is wider — fit by height, overflow sides
-          previewH = constraints.maxHeight;
-          previewW = previewH * camAspect;
-        } else {
-          // Camera is taller — fit by width, overflow top/bottom
-          previewW = constraints.maxWidth;
-          previewH = previewW / camAspect;
-        }
+        final controller = _cameraController!;
+        final aspectRatio = 1 / controller.value.aspectRatio;
+        final boxAspectRatio = constraints.maxWidth / constraints.maxHeight;
+        final previewWidth = boxAspectRatio > aspectRatio
+            ? constraints.maxWidth
+            : constraints.maxHeight * aspectRatio;
+        final previewHeight = previewWidth / aspectRatio;
 
         return ClipRect(
           child: OverflowBox(
-            maxWidth: previewW,
-            maxHeight: previewH,
+            maxWidth: previewWidth,
+            maxHeight: previewHeight,
             child: Stack(
               children: [
-                // Live feed
                 SizedBox(
-                  width: previewW,
-                  height: previewH,
-                  child: CameraPreview(_cameraController!),
+                  width: previewWidth,
+                  height: previewHeight,
+                  child: AspectRatio(
+                    aspectRatio: aspectRatio,
+                    child: CameraPreview(controller),
+                  ),
                 ),
                 // Corner-frame reticle
                 Positioned.fill(

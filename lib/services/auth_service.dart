@@ -12,16 +12,22 @@ class AuthService {
   factory AuthService() => _instance;
   AuthService._internal();
 
-  final SupabaseClient _supabase = Supabase.instance.client;
+  SupabaseClient get _supabase => Supabase.instance.client;
 
   // ─── Session State ─────────────────────────────
 
-  User? get currentUser => _supabase.auth.currentUser;
+  User? get currentUser {
+    try {
+      return _supabase.auth.currentUser;
+    } catch (e) {
+      debugPrint('[AuthService] Supabase session unavailable: $e');
+      return null;
+    }
+  }
 
   bool get isLoggedIn => currentUser != null;
 
-  Stream<AuthState> get authStateStream =>
-      _supabase.auth.onAuthStateChange;
+  Stream<AuthState> get authStateStream => _supabase.auth.onAuthStateChange;
 
   // ─── Email / Password Auth ─────────────────────
 

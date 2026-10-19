@@ -47,5 +47,3 @@ app.*.map.json
 .env
 backend/.env
 backend/venv
-
-*.pth
